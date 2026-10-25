@@ -7,6 +7,7 @@ list is non-empty (a platform with an empty rule list must never write a
 file).
 """
 
+import json
 import unittest
 from pathlib import Path
 
@@ -127,6 +128,90 @@ class RedactionBehaviour(unittest.TestCase):
         ]:
             for label in leaks:
                 self.assertNotIn(token, label)
+
+
+class FlattenedSingleLineResponse(unittest.TestCase):
+    """The flattened response: one long line, many set commands, one phash.
+
+    panos_op serialises a whole op answer into a single physical line (its
+    stdout is json.dumps of the parsed XML), so the collected text can reach
+    the filters as one long line. The fixture mirrors that flattened stdout
+    shape. Two layers must hold:
+
+    - panos_config_text restores the real line breaks from the dump, and
+    - redaction, even when fed the flattened line itself, breaks it at the
+      'set' command boundaries and removes only the command carrying the
+      phash, keeping every harmless command.
+    """
+
+    FIXTURE = "panos_one_line.cfg"
+
+    def test_config_text_restores_the_physical_lines(self):
+        text = PANOS.panos_config_text(_fixture(self.FIXTURE))
+        self.assertGreater(text.count("\n"), 3)
+        self.assertIn("set deviceconfig system hostname device-a\n", text)
+        self.assertIn("set mgt-config users admin phash fnRL/G5lXVMug\n", text)
+
+    def test_redact_keeps_the_harmless_commands(self):
+        redacted = PANOS.panos_redact(PANOS.panos_config_text(_fixture(self.FIXTURE)))
+        for harmless in (
+            "set deviceconfig system hostname device-a",
+            "set deviceconfig system timezone area-a",
+            "set deviceconfig system type laptop",
+            "set deviceconfig system password-recovery yes",
+            "set deviceconfig system ntp-servers primary 192.0.2.10",
+            "set network zone zone-a network ethernet1/1",
+            "set rulebase security rules rule-a action allow",
+        ):
+            self.assertIn(harmless, redacted)
+
+    def test_redact_removes_only_the_phash_command(self):
+        redacted = PANOS.panos_redact(PANOS.panos_config_text(_fixture(self.FIXTURE)))
+        self.assertNotIn("phash", redacted)
+        self.assertNotIn("fnRL/G5lXVMug", redacted)
+        self.assertIn(PANOS.PLACEHOLDER, redacted)
+
+    def test_leak_gate_passes_after_redaction(self):
+        redacted = PANOS.panos_redact(PANOS.panos_config_text(_fixture(self.FIXTURE)))
+        self.assertEqual(PANOS.panos_leaks(redacted), [])
+
+    def test_redact_also_survives_the_raw_flattened_line(self):
+        # Defence in depth: even when the redactor receives the flattened
+        # response itself, the command boundaries keep the harmless commands
+        # and only the phash command is replaced.
+        redacted = PANOS.panos_redact(_fixture(self.FIXTURE))
+        self.assertNotIn("phash", redacted)
+        self.assertNotIn("fnRL/G5lXVMug", redacted)
+        self.assertIn("set deviceconfig system hostname device-a", redacted)
+        self.assertIn("set deviceconfig system password-recovery yes", redacted)
+        self.assertIn("set rulebase security rules rule-a action allow", redacted)
+        self.assertIn(PANOS.PLACEHOLDER, redacted)
+        self.assertEqual(PANOS.panos_leaks(redacted), [])
+
+    def test_nested_result_is_flattened_to_physical_lines(self):
+        # A non-set answer: the result is a nested structure, not text. The
+        # extraction renders it one element per line so redaction stays
+        # line-oriented and the harmless elements survive.
+        dump = json.dumps({
+            "response": {"@status": "success", "result": {
+                "config": {"devices": {"entry": {"deviceconfig": {
+                    "system": {"hostname": "device-a",
+                               "phash": "fnRL/G5lXVMug",
+                               "timezone": "area-a"}}}}}}}})
+        text = PANOS.panos_config_text(dump)
+        self.assertGreater(text.count("\n"), 3)
+        redacted = PANOS.panos_redact(text)
+        self.assertIn("hostname: device-a", redacted)
+        self.assertIn("timezone: area-a", redacted)
+        self.assertNotIn("phash", redacted)
+        self.assertNotIn("fnRL/G5lXVMug", redacted)
+        self.assertEqual(PANOS.panos_leaks(redacted), [])
+
+    def test_non_json_and_empty_output_pass_through(self):
+        passthrough = "<response status=\"success\"><result>ok</result></response>"
+        self.assertEqual(PANOS.panos_config_text(passthrough), passthrough)
+        self.assertEqual(PANOS.panos_config_text(""), "")
+        self.assertEqual(PANOS.panos_config_text(None), "")
 
 
 class SyntheticEwcType7ConfigIsFullyRedacted(unittest.TestCase):

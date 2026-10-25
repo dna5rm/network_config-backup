@@ -3,10 +3,30 @@
 #
 # ansible_connection is local for this OS: the runner reaches the device over
 # HTTPS. The provider carries the address from ansible_host, the platform
-# user from ansible_user and BACKUP_PASSWORD. No api_key is used. The
-# configuration text is stdout (stdout_xml only when stdout is empty).
+# user from ansible_user and BACKUP_PASSWORD. No api_key is used.
+#
+# panos_op serialises a whole op answer into one physical line of JSON, so a
+# bare 'show config running' reaches redaction as a single unbreakable line
+# that still names every secret in it. This file therefore asks the device
+# for set-format output first ('set cli config-output-format set'), so
+# 'show config running' answers with real 'set' commands; panos_config_text
+# turns the collected dump back into physical lines. The default output
+# format is restored after the collection, on the unreachable path too, so
+# the run never leaves the preference behind on the device.
 - name: Collect the PAN-OS configuration and system information
   block:
+    - name: Ask the device for set-format configuration output
+      paloaltonetworks.panos.panos_op:
+        cmd: set cli config-output-format set
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+      register: config_backup_panos_format
+      changed_when: false
+      failed_when: false
+      no_log: true
+
     - name: Collect the running configuration from the API
       paloaltonetworks.panos.panos_op:
         cmd: show config running
@@ -30,9 +50,10 @@
     - name: Choose the configuration text the run collected
       ansible.builtin.set_fact:
         config_backup_collected_config: >-
-          {{ config_backup_panos_config.stdout | default('', true)
-             if (config_backup_panos_config.stdout | default('', true) | length) else
-             (config_backup_panos_config.stdout_xml | default('', true) | string) }}
+          {{ (config_backup_panos_config.stdout | default('', true)
+                if (config_backup_panos_config.stdout | default('', true) | length) else
+                (config_backup_panos_config.stdout_xml | default('', true) | string))
+             | panos_config_text }}
 
     - name: Fail the contact when the running configuration is empty
       ansible.builtin.fail:
@@ -46,6 +67,17 @@
         config_backup_raw_version: "{{ config_backup_panos_sysinfo.stdout | default('', true) }}"
 
   rescue:
+    - name: Restore the default configuration output format
+      paloaltonetworks.panos.panos_op:
+        cmd: set cli config-output-format default
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+      changed_when: false
+      failed_when: false
+      no_log: true
+
     - name: Record the unreachable state on the device record
       ansible.builtin.include_tasks:
         file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
@@ -62,6 +94,17 @@
 
     - name: End the play for this unreachable device
       ansible.builtin.meta: end_host
+
+- name: Restore the default configuration output format
+  paloaltonetworks.panos.panos_op:
+    cmd: set cli config-output-format default
+    provider:
+      ip_address: "{{ ansible_host }}"
+      username: "{{ ansible_user }}"
+      password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+  changed_when: false
+  failed_when: false
+  no_log: true
 
 - name: Redact the sensitive lines of the running configuration
   ansible.builtin.set_fact:

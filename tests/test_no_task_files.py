@@ -114,7 +114,19 @@ class Spec12_5PlaceholderFilesDoNotConnect(unittest.TestCase):
     def test_panos_task_file_uses_panos_op_modules(self):
         doc = _all_tasks("panos.yml")
         op_tasks = [t for t in doc if any(str(k).endswith("panos_op") for k in t)]
-        self.assertEqual(len(op_tasks), 2)
+        # The collection order is a contract: set-format output first, then
+        # the two reads, then the default-format restore on each exit path
+        # (block rescue and the success path after the block). A bare
+        # 'show config running' answers as one flattened line that the
+        # redactor cannot split, so the set-format request is mandatory.
+        commands = [_module_key(t, "panos_op")[1]["cmd"] for t in op_tasks]
+        self.assertEqual(
+            commands,
+            ["set cli config-output-format set",
+             "show config running",
+             "show system info",
+             "set cli config-output-format default",
+             "set cli config-output-format default"])
         for task in op_tasks:
             _, module = _module_key(task, "panos_op")
             self.assertIn("cmd", module)
