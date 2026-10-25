@@ -8,6 +8,9 @@
 # on dcim.device (observed_version, observed_at, validation_state,
 # desired_version) follow the spec exactly.
 #
+# All six are grouped under the custom-field group_name Backup, and the
+# play sets that group on both create and update.
+#
 # Run once from the runner:
 #   NETBOX_API=... NETBOX_TOKEN=... ansible-playbook bootstrap_netbox.yml
 #
@@ -180,7 +183,8 @@
               'label': item.item.name,
               'type': item.item.type,
               'object_types': item.item.object_types,
-              'required': false}
+              'required': false,
+              'group_name': 'Backup'}
              | combine({} if not (item.item.choices | default([], true)) else {'choice_set': ((config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.results[0].id if (config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.count > 0 else (config_backup_choice_set_created.results | selectattr('item', 'equalto', item.item) | first).json.id)}) }}
         status_code: 201
         validate_certs: true
@@ -204,7 +208,8 @@
               'label': item.item.name,
               'type': item.item.type,
               'object_types': item.item.object_types,
-              'required': false}
+              'required': false,
+              'group_name': 'Backup'}
              | combine({} if not (item.item.choices | default([], true)) else {'choice_set': ((config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.results[0].id if (config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.count > 0 else (config_backup_choice_set_created.results | selectattr('item', 'equalto', item.item) | first).json.id)}) }}
         status_code: 200
         validate_certs: true
