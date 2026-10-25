@@ -42,11 +42,15 @@ rename_variables:
     repl: nb_tags
 
 compose:
-  # The primary IPv4 without the prefix length. A device whose primary IP is
-  # not IPv4 composes an empty ansible_host and the play skips it.
-  ansible_host: "{{ primary_ip4.address | default('', true) | split('/') | first }}"
-  nb_device_id: "{{ id | default('', true) }}"
-  nb_site_slug: "{{ site.slug | default('', true) }}"
-  # With group_by platforms the plugin hands compose the platform slug
-  # string, not the platform object; accept either shape.
-  nb_platform_slug: "{{ (platform.slug if platform is mapping else platform) | default('', true) }}"
+  # Each entry is a bare Jinja expression, deliberately without {{ }}:
+  # the inventory plugin composes through evaluate_expression, which
+  # rejects template delimiters and would silently drop every composed
+  # variable (ansible-core 2.19).
+  # The primary IPv4 without the prefix length. A device whose primary IP
+  # is not IPv4 composes an empty ansible_host and the play skips it.
+  ansible_host: "primary_ip4.address | default('', true) | split('/') | first"
+  nb_device_id: "id | default('', true)"
+  nb_site_slug: "site.slug | default('', true)"
+  # The platform is the object in the device payload; accept the bare
+  # slug string too, which some inventory versions hand to compose.
+  nb_platform_slug: "(platform.slug if platform is mapping else platform) | default('', true)"

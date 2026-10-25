@@ -120,16 +120,20 @@ class RenderedInventoryShape(unittest.TestCase):
 class ComposePlatformSlugAcceptsBothShapes(unittest.TestCase):
     """The nb_platform_slug compose must work for either platform shape.
 
-    With group_by platforms and group_names_raw, the netbox plugin sets the
-    host platform variable to the slug string before compose runs, so a
-    bare platform.slug composes empty; the expression falls back to the
-    string itself, and a real platform object still wins.
+    The compose entry is a bare Jinja expression: the netbox plugin
+    composes through evaluate_expression, which rejects {{ }} template
+    delimiters (ansible-core 2.19) and would silently drop every
+    composed variable. The expression falls back to the slug string
+    when the plugin hands compose a slug instead of the platform
+    object, and composes empty when there is no platform at all.
     """
 
     def _compose_slug(self, variables: dict) -> str:
         rc, doc = _render({})
         self.assertEqual(rc, 0)
-        return jinja2.Template(doc["compose"]["nb_platform_slug"]).render(**variables)
+        value = doc["compose"]["nb_platform_slug"]
+        self.assertNotIn("{{", value)
+        return jinja2.Template("{{ %s }}" % value).render(**variables)
 
     def test_platform_object_uses_its_slug(self):
         self.assertEqual(
