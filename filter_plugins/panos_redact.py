@@ -64,6 +64,9 @@ LEAK_RULES: List[Tuple[str, re.Pattern]] = [
 
 VERSION_PATTERNS = [
     re.compile(r"(?im)^\s*sw-version:\s*([0-9][^\s]+)"),
+    # panos_op returns one JSON line, not a CLI "sw-version:" row.
+    re.compile(r"""(?i)["']sw-version["']\s*:\s*["']([0-9][^"']+)"""),
+    re.compile(r"(?i)<sw-version>([0-9][^<]+)"),
 ]
 
 # Every command of set-format PAN-OS output begins with 'set'.

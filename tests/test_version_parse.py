@@ -48,6 +48,10 @@ class Spec12_4VersionParse(unittest.TestCase):
                 self.assertEqual(FILTERS[platform](""), "")
                 self.assertEqual(FILTERS[platform](None), "")
 
+    def test_panos_json_one_line_yields_token(self):
+        blob = '{"response":{"result":{"system":{"sw-version":"12.2.4","model":"PA-440"}}}}'
+        self.assertEqual(FILTERS["panos"](blob), "12.2.4")
+
     def test_version_token_is_not_the_whole_response(self):
         # Spec section 7: do not store the whole show output in NetBox.
         token = FILTERS["panos"](_fixture("panos_show_system_info.txt"))
