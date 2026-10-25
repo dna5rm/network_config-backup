@@ -67,6 +67,16 @@ REDACT_RULES: List[Tuple[str, re.Pattern]] = [
         "type-7 key line",
         re.compile(r"^\s*key(\s+[0-7])?\s+\S+", re.IGNORECASE),
     ),
+    # The leak backstop flags type-7 key material as a token shape, not as
+    # a command word, so redaction must be at least that wide: any line
+    # carrying a type-7 token anywhere is replaced whole. This rule is
+    # deliberately wider than the (case-sensitive) leak rule, which only
+    # sees uppercase hex, so a line that leaks can no longer survive
+    # redaction.
+    (
+        "type-7 key material token",
+        re.compile(r"\b[0-9A-F]{10,}\b", re.IGNORECASE),
+    ),
     (
         "key line carrying a value",
         re.compile(r"^\s*key\s+(?!chain\b|config-key\b|generate\b|pubkey-chain\b)\S+", re.IGNORECASE),

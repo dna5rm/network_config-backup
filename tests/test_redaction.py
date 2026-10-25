@@ -41,7 +41,7 @@ class Spec12_3LeakBackstop(unittest.TestCase):
 
     def test_ios_fixture_still_leaks_after_redaction(self):
         redacted = IOS.ios_redact(_fixture("ios_leaks.cfg"))
-        self.assertEqual(IOS.ios_leaks(redacted), ["type-7 key material"])
+        self.assertEqual(IOS.ios_leaks(redacted), ["salted password hash token"])
 
     def test_nxos_fixture_still_leaks_after_redaction(self):
         redacted = NXOS.nxos_redact(_fixture("nxos_leaks.cfg"))
@@ -120,13 +120,49 @@ class RedactionBehaviour(unittest.TestCase):
     def test_leak_labels_never_carry_line_content(self):
         # The failure message names the rule id, not the secret.
         for leaks, token in [
-            (IOS.ios_leaks(IOS.ios_redact(_fixture("ios_leaks.cfg"))), "0123456789ABCDEF"),
+            (IOS.ios_leaks(IOS.ios_redact(_fixture("ios_leaks.cfg"))), "zyxwvutsrqponmlk"),
             (NXOS.nxos_leaks(NXOS.nxos_redact(_fixture("nxos_leaks.cfg"))), "08224F4D1D0A0A"),
             (JUNOS.junos_leaks(JUNOS.junos_redact(_fixture("junos_leaks.cfg"))), "Gy5ZzAbcdefGHijkl"),
             (PANOS.panos_leaks(PANOS.panos_redact(_fixture("panos_leaks.cfg"))), "0123456789abcdef"),
         ]:
             for label in leaks:
                 self.assertNotIn(token, label)
+
+
+class SyntheticEwcType7ConfigIsFullyRedacted(unittest.TestCase):
+    """A synthetic EWC AP config with fake type-7 tokens, no live secret.
+
+    The embedded wireless controller configuration carries type-7 material
+    on command lines that do not start with 'key' (the password-encryption
+    master key, a per-wlan psk line, mid-line legacy tokens, the
+    self-signed certificate identity number); redaction
+    must replace those whole lines or the leak backstop fails the run.
+    """
+
+    FIXTURE = "ios_ewc_type7.cfg"
+
+    def test_ios_ewc_type7_lines_are_replaced_whole(self):
+        redacted = IOS.ios_redact(_fixture(self.FIXTURE))
+        for token in ("08224F4D1D0A0A0A", "135A4C1A0D1A0A0A0A", "123A0C1607190A0A0A",
+                      "1234567890"):
+            self.assertNotIn(token, redacted)
+        self.assertNotIn("key config-key", redacted)
+        self.assertNotIn("TP-self-signed", redacted)
+        self.assertNotIn("psk ascii", redacted)
+
+    def test_ios_ewc_type7_reports_no_leak_after_redaction(self):
+        redacted = IOS.ios_redact(_fixture(self.FIXTURE))
+        self.assertEqual(IOS.ios_leaks(redacted), [])
+
+    def test_ios_ewc_type7_keeps_the_non_secret_lines(self):
+        redacted = IOS.ios_redact(_fixture(self.FIXTURE))
+        self.assertIn("hostname device-a", redacted)
+        self.assertIn("wlan fixture-ssid 2 fixture-ssid", redacted)
+        self.assertIn("snmp-server location site-a", redacted)
+
+    def test_ios_replaces_a_whole_line_carrying_type7_material(self):
+        line = " description legacy key 7 0123456789ABCDEF\n"
+        self.assertEqual(IOS.ios_redact(line), IOS.PLACEHOLDER + "\n")
 
 
 if __name__ == "__main__":
