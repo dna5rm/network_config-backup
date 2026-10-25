@@ -45,10 +45,12 @@
           {{ config_backup_platform_meta.get(nb_platform_slug | default('', true), {}).get('ansible_network_os', '') }}
         config_backup_platform_user: >-
           {{ config_backup_platform_meta.get(nb_platform_slug | default('', true), {}).get('ansible_user', '') }}
-
-    - name: Expose the resolved network OS to the connection plugins
-      ansible.builtin.set_fact:
-        ansible_network_os: "{{ config_backup_device_os }}"
+        # ansible_network_os lands in this same set_fact on purpose: the
+        # device connection resolves to network_cli as soon as
+        # config_backup_device_os exists, and a network_cli connection
+        # refuses to open before ansible_network_os is visible.
+        ansible_network_os: >-
+          {{ config_backup_platform_meta.get(nb_platform_slug | default('', true), {}).get('ansible_network_os', '') }}
 
     - name: Choose the gate outcome for this device
       ansible.builtin.set_fact:
