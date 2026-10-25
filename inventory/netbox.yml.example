@@ -46,4 +46,6 @@ compose:
   ansible_host: "{{ primary_ip4.address | default('', true) | split('/') | first }}"
   nb_device_id: "{{ id | default('', true) }}"
   nb_site_slug: "{{ site.slug | default('', true) }}"
-  nb_platform_slug: "{{ platform.slug | default('', true) }}"
+  # With group_by platforms the plugin hands compose the platform slug
+  # string, not the platform object; accept either shape.
+  nb_platform_slug: "{{ (platform.slug if platform is mapping else platform) | default('', true) }}"

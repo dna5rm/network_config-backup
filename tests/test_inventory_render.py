@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import jinja2
 import yaml
 
 from tests import _REPO
@@ -114,6 +115,32 @@ class RenderedInventoryShape(unittest.TestCase):
         self.assertIn("nb_site_slug", compose)
         self.assertIn("nb_platform_slug", compose)
         self.assertIn("nb_device_id", compose)
+
+
+class ComposePlatformSlugAcceptsBothShapes(unittest.TestCase):
+    """The nb_platform_slug compose must work for either platform shape.
+
+    With group_by platforms and group_names_raw, the netbox plugin sets the
+    host platform variable to the slug string before compose runs, so a
+    bare platform.slug composes empty; the expression falls back to the
+    string itself, and a real platform object still wins.
+    """
+
+    def _compose_slug(self, variables: dict) -> str:
+        rc, doc = _render({})
+        self.assertEqual(rc, 0)
+        return jinja2.Template(doc["compose"]["nb_platform_slug"]).render(**variables)
+
+    def test_platform_object_uses_its_slug(self):
+        self.assertEqual(
+            self._compose_slug({"platform": {"slug": "example-os", "name": "Example OS"}}),
+            "example-os")
+
+    def test_platform_string_is_used_directly(self):
+        self.assertEqual(self._compose_slug({"platform": "example-os"}), "example-os")
+
+    def test_missing_platform_composes_empty(self):
+        self.assertEqual(self._compose_slug({}), "")
 
 
 if __name__ == "__main__":
