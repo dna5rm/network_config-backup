@@ -1,0 +1,140 @@
+---
+# Ensure the six NetBox custom fields this playbook uses exist.
+#
+# Creates a missing field or updates an existing one; never deletes
+# anything. Fields on dcim.platform (ansible_network_os, ansible_user) and
+# on dcim.device (observed_version, observed_at, validation_state,
+# desired_version) follow the spec exactly.
+#
+# Run once from the runner:
+#   NETBOX_API=... NETBOX_TOKEN=... ansible-playbook bootstrap_netbox.yml
+#
+# The nightly backup never runs this play. In check mode the play only
+# reports the six fields it would ensure.
+
+- name: Ensure the NetBox custom fields for config backup
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    config_backup_fields:
+      - name: ansible_network_os
+        object_types: [dcim.platform]
+        type: select
+        choices:
+          - cisco.ios.ios
+          - cisco.nxos.nxos
+          - junipernetworks.junos.junos
+          - paloaltonetworks.panos.panos
+          - f5.bigip
+          - cisco.meraki
+          - velocloud
+      - name: ansible_user
+        object_types: [dcim.platform]
+        type: text
+      - name: observed_version
+        object_types: [dcim.device]
+        type: text
+      - name: observed_at
+        object_types: [dcim.device]
+        type: datetime
+      - name: validation_state
+        object_types: [dcim.device]
+        type: select
+        choices:
+          - current
+          - unreachable
+          - unparsed
+          - no_task
+      - name: desired_version
+        object_types: [dcim.device]
+        type: text
+
+  tasks:
+    - name: Report the custom fields this play ensures
+      ansible.builtin.debug:
+        msg: "custom_field {{ item.name }} object={{ item.object_types | join(',') }} type={{ item.type }}"
+      loop: "{{ config_backup_fields }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Require NetBox API access in the environment
+      ansible.builtin.fail:
+        msg: >-
+          NETBOX_API and/or NETBOX_TOKEN are not set. Export both before
+          running this play; the values are read from the environment only
+          and are never echoed here.
+      when: >
+        not ansible_check_mode and
+        ((lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim) == '' or
+         (lookup('ansible.builtin.env', 'NETBOX_TOKEN') | default('', true) | trim) == '')
+
+    - name: Read the existing custom fields from NetBox
+      ansible.builtin.uri:
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/core/custom-fields/?name={{ item.name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+          Accept: application/json
+        status_code: 200
+        validate_certs: true
+      loop: "{{ config_backup_fields }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: config_backup_field_read
+      no_log: true
+      failed_when: false
+
+    - name: Refuse to continue when NetBox could not be read
+      ansible.builtin.fail:
+        msg: "{{ item.item.name }}: NetBox read failed (HTTP {{ item | config_backup_http_status }})."
+      loop: "{{ config_backup_field_read.results | default([], true) }}"
+      when: not ansible_check_mode and (item | config_backup_http_status) != 200
+
+    - name: Create a missing custom field on NetBox
+      ansible.builtin.uri:
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/core/custom-fields/"
+        method: POST
+        headers:
+          Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+          Accept: application/json
+          Content-Type: application/json
+        body_format: json
+        body: >-
+          {{ {'name': item.item.name,
+              'label': item.item.name,
+              'type': item.item.type,
+              'object_types': item.item.object_types,
+              'required': false}
+             | combine({} if not (item.item.choices | default([], true)) else {'choices': item.item.choices}) }}
+        status_code: 201
+        validate_certs: true
+      loop: "{{ config_backup_field_read.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: not ansible_check_mode and (item | config_backup_http_status) == 200 and item.json.count == 0
+      no_log: true
+
+    - name: Update an existing custom field on NetBox
+      ansible.builtin.uri:
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/core/custom-fields/{{ item.json.results[0].id }}/"
+        method: PATCH
+        headers:
+          Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+          Accept: application/json
+          Content-Type: application/json
+        body_format: json
+        body: >-
+          {{ {'name': item.item.name,
+              'label': item.item.name,
+              'type': item.item.type,
+              'object_types': item.item.object_types,
+              'required': false}
+             | combine({} if not (item.item.choices | default([], true)) else {'choices': item.item.choices}) }}
+        status_code: 200
+        validate_certs: true
+      loop: "{{ config_backup_field_read.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: not ansible_check_mode and (item | config_backup_http_status) == 200 and item.json.count > 0
+      no_log: true

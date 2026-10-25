@@ -1,0 +1,61 @@
+---
+# Shared NetBox writeback used by every task file.
+#
+# The includer passes config_backup_patch_fields: a dict of the device custom
+# fields to write. The current custom fields are read first and merged, so
+# fields this run does not intend to change keep their values regardless of
+# whether NetBox merges or replaces custom field data on PATCH. Only the
+# fields in config_backup_patch_fields differ from what NetBox already holds.
+#
+# Run on the runner (delegated to localhost) — this never opens a connection
+# to a device. no_log hides the token; failures print the status line only,
+# naming the host, never a secret.
+
+- name: Refuse to write back without a NetBox device id
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }}: nb_device_id is not set; the device record cannot be updated."
+  when: (nb_device_id | default(0, true) | int) <= 0
+
+- name: Read the device custom fields from NetBox
+  ansible.builtin.uri:
+    url: "{{ config_backup_netbox_api }}/api/dcim/devices/{{ nb_device_id | int }}/"
+    method: GET
+    headers:
+      Authorization: "Token {{ config_backup_netbox_token }}"
+      Accept: application/json
+    status_code: 200
+    validate_certs: true
+  delegate_to: localhost
+  register: config_backup_nb_get
+  no_log: true
+  failed_when: false
+
+- name: Refuse to continue when the device could not be read
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }}: NetBox read failed (HTTP {{ config_backup_nb_get | config_backup_http_status }})."
+  when: (config_backup_nb_get | config_backup_http_status) != 200
+
+- name: Write only the intended custom fields back to NetBox
+  ansible.builtin.uri:
+    url: "{{ config_backup_netbox_api }}/api/dcim/devices/{{ nb_device_id | int }}/"
+    method: PATCH
+    headers:
+      Authorization: "Token {{ config_backup_netbox_token }}"
+      Accept: application/json
+      Content-Type: application/json
+    body_format: json
+    body:
+      custom_fields: >-
+        {{ (config_backup_nb_get.json.custom_fields | default({}, true))
+           | combine(config_backup_patch_fields) }}
+    status_code: 200
+    validate_certs: true
+  delegate_to: localhost
+  register: config_backup_nb_patch
+  no_log: true
+  failed_when: false
+
+- name: Refuse to continue when the device could not be updated
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }}: NetBox write failed (HTTP {{ config_backup_nb_patch | config_backup_http_status }})."
+  when: (config_backup_nb_patch | config_backup_http_status) != 200

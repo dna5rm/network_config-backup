@@ -1,0 +1,85 @@
+---
+# Connection and archive defaults for network_config-backup.
+#
+# backup.yml reads the NetBox platform metadata and sets, per device,
+# config_backup_device_os and config_backup_platform_user from the platform
+# custom fields ansible_network_os and ansible_user. The connection variables
+# below resolve lazily, after those facts exist, so each device follows the
+# defaults for its OS. A platform whose connector differs ships a
+# group_vars/<platform-slug>.yml file (see example-platform.yml) that
+# overrides the value for that platform's group only.
+#
+# Login: the device user comes from the platform custom field ansible_user
+# when set, otherwise from BACKUP_USER. Every platform uses BACKUP_PASSWORD.
+# Nothing below prints secrets: values come from the environment at run time.
+
+config_backup_os_values:
+  - cisco.ios.ios
+  - cisco.nxos.nxos
+  - junipernetworks.junos.junos
+  - paloaltonetworks.panos.panos
+  - f5.bigip
+  - cisco.meraki
+  - velocloud
+
+config_backup_connection_values:
+  - network_cli
+  - httpapi
+  - netconf
+  - local
+
+config_backup_connection_defaults:
+  cisco.ios.ios: network_cli
+  cisco.nxos.nxos: network_cli
+  junipernetworks.junos.junos: network_cli
+  paloaltonetworks.panos.panos: local
+  f5.bigip: local
+  cisco.meraki: local
+  velocloud: local
+
+# Only the CLI platforms that need enable mode escalate; Junos ignores
+# become and the local-connection platforms never touch it.
+config_backup_become_defaults:
+  cisco.ios.ios: true
+  cisco.nxos.nxos: true
+  junipernetworks.junos.junos: false
+  paloaltonetworks.panos.panos: false
+  f5.bigip: false
+  cisco.meraki: false
+  velocloud: false
+
+config_backup_task_files:
+  cisco.ios.ios: ios.yml
+  cisco.nxos.nxos: nxos.yml
+  junipernetworks.junos.junos: junos.yml
+  paloaltonetworks.panos.panos: panos.yml
+  f5.bigip: f5.yml
+  cisco.meraki: meraki.yml
+  velocloud: velocloud.yml
+
+# The fallback to local only applies while the device OS fact does not
+# exist yet (very first tasks) or for an OS outside the defaults table;
+# the gate ends such devices before anything connects.
+ansible_connection: >-
+  {{ config_backup_connection_defaults.get(config_backup_device_os | default('', true), 'local') }}
+ansible_become: >-
+  {{ config_backup_become_defaults.get(config_backup_device_os | default('', true), false) }}
+ansible_become_method: enable
+ansible_user: >-
+  {{ config_backup_platform_user | default('', true) | trim
+     if (config_backup_platform_user | default('', true) | trim | length) else
+     lookup('ansible.builtin.env', 'BACKUP_USER') | default('', true) }}
+ansible_password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+ansible_become_password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+ansible_command_timeout: 120
+
+# NetBox API, no trailing /api suffix; the token stays in the environment.
+config_backup_netbox_api: >-
+  {{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}
+config_backup_netbox_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') | default('', true) }}"
+
+# Archive remote, never with credentials embedded. Empty keeps the files in
+# the working tree and pushes nothing.
+config_backup_git_url: "{{ lookup('ansible.builtin.env', 'BACKUP_GIT_URL') | default('', true) }}"
+# Persistent archive working tree; git_sync.sh clones the remote into it.
+config_backup_workdir: "{{ lookup('ansible.builtin.env', 'BACKUP_WORKDIR') | default(playbook_dir ~ '/work', true) }}"

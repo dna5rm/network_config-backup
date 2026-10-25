@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# backup: the only entry point for the nightly configuration backup.
+#
+# Required environment (never printed):
+#   NETBOX_API / NETBOX_TOKEN     NetBox inventory (no /api suffix on the URL)
+#   BACKUP_USER / BACKUP_PASSWORD device login
+# Optional environment:
+#   NETBOX_SITE / NETBOX_PLATFORM runner limits, applied as NetBox query
+#                                 filters only when non-empty
+#   BACKUP_GIT_URL                archive repository URL, never with credentials
+#   BACKUP_GIT_TOKEN              HTTPS push token, answered at run time
+#   BACKUP_WORKDIR                archive working tree
+#
+# Renders a temporary inventory from inventory/netbox.yml.example plus the
+# optional site and platform filters, runs ansible-playbook backup.yml, and
+# deletes the temporary inventory. Extra arguments pass through.
+set -euo pipefail
+
+cd -- "$(dirname -- "$0")"
+
+unset SSH_AUTH_SOCK
+
+missing=0
+for var in NETBOX_API NETBOX_TOKEN BACKUP_USER BACKUP_PASSWORD; do
+  if [ -z "${!var:-}" ]; then
+    echo "backup: \$${var} is not set." >&2
+    missing=1
+  fi
+done
+if [ "$missing" -ne 0 ]; then
+  echo "backup: export NETBOX_API, NETBOX_TOKEN, BACKUP_USER and BACKUP_PASSWORD first (site, platform and git variables are optional)." >&2
+  exit 1
+fi
+
+tmp_inventory="$(mktemp "${TMPDIR:-/tmp}/config-backup-inventory.XXXXXX.yml")"
+trap 'rm -f "$tmp_inventory"' EXIT
+
+scripts/render_inventory.sh inventory/netbox.yml.example "$tmp_inventory"
+
+ansible-playbook -i "$tmp_inventory" backup.yml "$@"

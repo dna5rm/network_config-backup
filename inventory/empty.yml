@@ -1,0 +1,5 @@
+---
+# Empty inventory: used only for --syntax-check and offline tooling runs.
+# Real runs render a temporary NetBox inventory via ./backup.
+all:
+  hosts: {}

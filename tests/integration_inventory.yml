@@ -1,0 +1,11 @@
+all:
+  children:
+    ios_all:
+      hosts: {}
+    platform-a:
+      hosts:
+        device-a:
+          ansible_host: 192.0.2.10
+          nb_device_id: 1
+          nb_site_slug: site-a
+          nb_platform_slug: platform-a

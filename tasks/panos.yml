@@ -1,0 +1,120 @@
+---
+# paloaltonetworks.panos.panos: collect via panos_op on the runner.
+#
+# ansible_connection is local for this OS: the runner reaches the device over
+# HTTPS. The provider carries the address from ansible_host, the platform
+# user from ansible_user and BACKUP_PASSWORD. No api_key is used. The
+# configuration text is stdout (stdout_xml only when stdout is empty).
+- name: Collect the PAN-OS configuration and system information
+  block:
+    - name: Collect the running configuration from the API
+      paloaltonetworks.panos.panos_op:
+        cmd: show config running
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+      register: config_backup_panos_config
+      no_log: true
+
+    - name: Collect the system information from the API
+      paloaltonetworks.panos.panos_op:
+        cmd: show system info
+        provider:
+          ip_address: "{{ ansible_host }}"
+          username: "{{ ansible_user }}"
+          password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
+      register: config_backup_panos_sysinfo
+      no_log: true
+
+    - name: Choose the configuration text the run collected
+      ansible.builtin.set_fact:
+        config_backup_collected_config: >-
+          {{ config_backup_panos_config.stdout | default('', true)
+             if (config_backup_panos_config.stdout | default('', true) | length) else
+             (config_backup_panos_config.stdout_xml | default('', true) | string) }}
+
+    - name: Fail the contact when the running configuration is empty
+      ansible.builtin.fail:
+        msg: "{{ inventory_hostname }}: 'show config running' returned no output."
+      when: (config_backup_collected_config | trim | length) == 0
+
+    - name: Note the collected configuration and the observation time
+      ansible.builtin.set_fact:
+        config_backup_observed_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+        config_backup_raw_config: "{{ config_backup_collected_config }}"
+        config_backup_raw_version: "{{ config_backup_panos_sysinfo.stdout | default('', true) }}"
+
+  rescue:
+    - name: Record the unreachable state on the device record
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+      vars:
+        config_backup_patch_fields:
+          validation_state: unreachable
+
+    - name: Explain the failed contact
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: unreachable, recorded as validation_state
+          unreachable; observed_version, observed_at and the archive file
+          were left untouched.
+
+    - name: End the play for this unreachable device
+      ansible.builtin.meta: end_host
+
+- name: Redact the sensitive lines of the running configuration
+  ansible.builtin.set_fact:
+    config_backup_redacted: "{{ config_backup_raw_config | panos_redact | trim }}\n"
+
+- name: List the redaction rules that survived redaction
+  ansible.builtin.set_fact:
+    config_backup_leaked_rules: "{{ config_backup_redacted | panos_leaks }}"
+
+- name: Record the safety failure on the device record
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+  vars:
+    config_backup_patch_fields:
+      validation_state: unparsed
+      observed_at: "{{ config_backup_observed_at }}"
+  when: (config_backup_leaked_rules | length) > 0
+
+- name: Fail closed rather than archive a leaking configuration
+  ansible.builtin.fail:
+    msg: >-
+      {{ inventory_hostname }}: the redacted configuration still matches the
+      sensitive rules {{ config_backup_leaked_rules | join(', ') }}. The raw
+      configuration is not written to the archive.
+  when: (config_backup_leaked_rules | length) > 0
+
+- name: Write the redacted configuration to the archive working tree
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_archive_write.yml"
+
+- name: Parse the version token from the system information
+  ansible.builtin.set_fact:
+    config_backup_version_token: "{{ config_backup_raw_version | panos_version }}"
+
+- name: Decide the validation state of this device
+  ansible.builtin.set_fact:
+    config_backup_validation_state: >-
+      {{ 'current' if (config_backup_version_token | default('', true) | length) > 0 else 'unparsed' }}
+
+- name: Assemble the NetBox custom-field payload
+  ansible.builtin.set_fact:
+    config_backup_patch_fields: >-
+      {{ dict(validation_state=config_backup_validation_state,
+              observed_at=config_backup_observed_at)
+         | combine(dict(observed_version=config_backup_version_token))
+         if (config_backup_version_token | default('', true) | length) > 0
+         else dict(validation_state=config_backup_validation_state,
+                   observed_at=config_backup_observed_at) }}
+
+- name: Write the device custom fields back to NetBox
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+
+- name: Note the archive path this device contributed
+  ansible.builtin.set_fact:
+    config_backup_written_path: "{{ nb_site_slug }}/{{ inventory_hostname }}.cfg"

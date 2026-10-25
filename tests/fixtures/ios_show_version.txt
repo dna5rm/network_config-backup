@@ -1,0 +1,6 @@
+Cisco IOS XE Software, Version 17.09.04a
+Cisco IOS Software [Cupertino], Catalyst L3 Switch Software (CAT9K_IOS_XE), Version 17.9.3a
+ROM: IOS-XE ROMMON
+
+device-a uptime is 1 week, 2 days
+System image file is "flash:packages.conf"

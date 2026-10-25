@@ -1,0 +1,3 @@
+device-a uptime is 1 week, 2 days
+Registry code embedded in the image
+System image file is "flash:packages.conf"

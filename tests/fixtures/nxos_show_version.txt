@@ -1,0 +1,8 @@
+Cisco Nexus Operating System (NX-OS) Software
+TAC support: see the documentation
+
+system:      version 9.10(3)
+system:      kickstart image file is: bootflash:/nxos.bin
+system:      kickstart compile time
+
+NX-OS v9.10(3) on Nexus 9000v

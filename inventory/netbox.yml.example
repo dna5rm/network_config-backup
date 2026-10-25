@@ -1,0 +1,49 @@
+---
+# NetBox dynamic inventory template for network_config-backup.
+#
+# ./backup copies this file to a temporary inventory and inserts the optional
+# site and platform runner filters in place of the anchor line. Do not run
+# this file directly.
+#
+# NETBOX_API and NETBOX_TOKEN are read from the environment by the plugin;
+# neither value is written into this file.
+#
+# Membership is decided by NetBox itself: only devices whose status is
+# active and whose primary IPv4 is set are returned. The platform custom
+# field ansible_network_os is checked by the play, before anything connects.
+
+plugin: netbox.netbox.nb_inventory
+
+validate_certs: true
+config_context: false
+interfaces: false
+services: false
+fetch_all: true
+
+device_query_filters:
+  - status: active
+  - has_primary_ip: 'true'
+  # anchor: config-backup-runner-filters
+
+# A name that matches nothing: the backup never inventories virtual machines.
+vm_query_filters:
+  - name: config-backup-no-virtual-machines
+
+group_by:
+  - platforms
+group_names_raw: true
+
+# Ansible reserves serial and tags. Rename them before they become host vars.
+rename_variables:
+  - pattern: '^serial$'
+    repl: nb_serial
+  - pattern: '^tags$'
+    repl: nb_tags
+
+compose:
+  # The primary IPv4 without the prefix length. A device whose primary IP is
+  # not IPv4 composes an empty ansible_host and the play skips it.
+  ansible_host: "{{ primary_ip4.address | default('', true) | split('/') | first }}"
+  nb_device_id: "{{ id | default('', true) }}"
+  nb_site_slug: "{{ site.slug | default('', true) }}"
+  nb_platform_slug: "{{ platform.slug | default('', true) }}"

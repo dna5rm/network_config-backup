@@ -1,0 +1,2 @@
+Hostname: device-a
+Model: mx960

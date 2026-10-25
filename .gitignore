@@ -1,0 +1,8 @@
+collections/
+work/
+.venv/
+*.retry
+.env
+__pycache__/
+.pytest_cache/
+*.bin

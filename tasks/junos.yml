@@ -1,0 +1,103 @@
+---
+# junipernetworks.junos.junos: collect the configuration as set lines and
+# the version.
+#
+# The pager is turned off with the no-more pipe. Nothing is committed on the
+# device and the configuration mode is never entered. A failed contact
+# records validation_state unreachable.
+- name: Collect the Junos configuration and version
+  block:
+    - name: Turn the pager off and collect the show outputs
+      junipernetworks.junos.junos_command:
+        commands:
+          - show configuration | display set | no-more
+          - show version | no-more
+      register: config_backup_junos_show
+      no_log: true
+
+    - name: Fail the contact when the running configuration is empty
+      ansible.builtin.fail:
+        msg: "{{ inventory_hostname }}: 'show configuration' returned no output."
+      when: >-
+        (config_backup_junos_show.stdout | default([], true) | length) < 2
+        or (config_backup_junos_show.stdout[0] | default('', true) | trim | length) == 0
+
+    - name: Note the collected configuration and the observation time
+      ansible.builtin.set_fact:
+        config_backup_observed_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+        config_backup_raw_config: "{{ config_backup_junos_show.stdout[0] }}"
+        config_backup_raw_version: "{{ config_backup_junos_show.stdout[1] | default('', true) }}"
+
+  rescue:
+    - name: Record the unreachable state on the device record
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+      vars:
+        config_backup_patch_fields:
+          validation_state: unreachable
+
+    - name: Explain the failed contact
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: unreachable, recorded as validation_state
+          unreachable; observed_version, observed_at and the archive file
+          were left untouched.
+
+    - name: End the play for this unreachable device
+      ansible.builtin.meta: end_host
+
+- name: Redact the sensitive lines of the running configuration
+  ansible.builtin.set_fact:
+    config_backup_redacted: "{{ config_backup_raw_config | junos_redact | trim }}\n"
+
+- name: List the redaction rules that survived redaction
+  ansible.builtin.set_fact:
+    config_backup_leaked_rules: "{{ config_backup_redacted | junos_leaks }}"
+
+- name: Record the safety failure on the device record
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+  vars:
+    config_backup_patch_fields:
+      validation_state: unparsed
+      observed_at: "{{ config_backup_observed_at }}"
+  when: (config_backup_leaked_rules | length) > 0
+
+- name: Fail closed rather than archive a leaking configuration
+  ansible.builtin.fail:
+    msg: >-
+      {{ inventory_hostname }}: the redacted configuration still matches the
+      sensitive rules {{ config_backup_leaked_rules | join(', ') }}. The raw
+      configuration is not written to the archive.
+  when: (config_backup_leaked_rules | length) > 0
+
+- name: Write the redacted configuration to the archive working tree
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_archive_write.yml"
+
+- name: Parse the version token from the show output
+  ansible.builtin.set_fact:
+    config_backup_version_token: "{{ config_backup_raw_version | junos_version }}"
+
+- name: Decide the validation state of this device
+  ansible.builtin.set_fact:
+    config_backup_validation_state: >-
+      {{ 'current' if (config_backup_version_token | default('', true) | length) > 0 else 'unparsed' }}
+
+- name: Assemble the NetBox custom-field payload
+  ansible.builtin.set_fact:
+    config_backup_patch_fields: >-
+      {{ dict(validation_state=config_backup_validation_state,
+              observed_at=config_backup_observed_at)
+         | combine(dict(observed_version=config_backup_version_token))
+         if (config_backup_version_token | default('', true) | length) > 0
+         else dict(validation_state=config_backup_validation_state,
+                   observed_at=config_backup_observed_at) }}
+
+- name: Write the device custom fields back to NetBox
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+
+- name: Note the archive path this device contributed
+  ansible.builtin.set_fact:
+    config_backup_written_path: "{{ nb_site_slug }}/{{ inventory_hostname }}.cfg"

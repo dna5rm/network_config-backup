@@ -1,0 +1,5 @@
+Hostname: device-a
+Model: mx960
+Junos: 21.4R3-S4.9
+JUNOS OS Kernel 64-bit  [20230101.abc123]
+JUNOS OS Crypto 64-bit

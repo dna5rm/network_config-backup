@@ -1,0 +1,42 @@
+---
+# Common archive steps shared by every platform task file.
+#
+# The includer has already set config_backup_redacted. The site slug and the
+# device name come from the inventory host; if either is empty or carries a
+# path separator, this host fails and nothing is written.
+#
+# Runs on the runner (delegated to localhost): the working tree is local, and
+# this must never depend on the device connection.
+
+- name: Fail closed when the redacted configuration is empty
+  ansible.builtin.fail:
+    msg: "{{ inventory_hostname }}: the redacted configuration is empty; refusing to write a file."
+  when: (config_backup_redacted | default('', true) | trim | length) == 0
+
+- name: Verify the archive path components
+  ansible.builtin.fail:
+    msg: >-
+      {{ inventory_hostname }}: the archive path components are not usable
+      (site slug '{{ nb_site_slug | default('', true) }}'); both the site
+      slug and the device name must be non-empty and free of path separators.
+  when: >-
+    (nb_site_slug | default('', true) | trim | length) == 0
+    or (inventory_hostname | default('', true) | length) == 0
+    or ('/' in (nb_site_slug | default('', true)))
+    or ('\\' in (nb_site_slug | default('', true)))
+    or ('/' in inventory_hostname)
+    or ('\\' in inventory_hostname)
+
+- name: Ensure the site directory exists in the working tree
+  ansible.builtin.file:
+    path: "{{ config_backup_workdir }}/{{ nb_site_slug }}"
+    state: directory
+    mode: '0750'
+  delegate_to: localhost
+
+- name: Write the redacted running configuration
+  ansible.builtin.copy:
+    content: "{{ config_backup_redacted }}"
+    dest: "{{ config_backup_workdir }}/{{ nb_site_slug }}/{{ inventory_hostname }}.cfg"
+    mode: '0640'
+  delegate_to: localhost

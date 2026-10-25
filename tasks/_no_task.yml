@@ -1,0 +1,13 @@
+---
+# Placeholder platforms: record validation_state no_task.
+#
+# Included by the task files of f5.bigip, cisco.meraki and velocloud, and by
+# the gate in backup.yml for a disallowed connector. The NetBox writeback is
+# delegated to the runner; no connection to a device is opened.
+
+- name: Record no_task on the device record
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+  vars:
+    config_backup_patch_fields:
+      validation_state: no_task

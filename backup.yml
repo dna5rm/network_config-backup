@@ -1,0 +1,127 @@
+---
+# network_config-backup: nightly device configuration backup.
+#
+# Membership (decided by NetBox plus the gate below): status active, primary
+# IPv4 set, and the platform custom field ansible_network_os holding a
+# backed-up value. Devices that do not qualify are ended before anything
+# connects to them.
+#
+# Environment: NETBOX_API, NETBOX_TOKEN, BACKUP_USER, BACKUP_PASSWORD.
+# Optional: NETBOX_SITE, NETBOX_PLATFORM (inserted by ./backup),
+# BACKUP_GIT_URL, BACKUP_GIT_TOKEN, BACKUP_WORKDIR.
+#
+# The play writes only the device custom fields observed_version,
+# observed_at and validation_state. It never writes desired_version,
+# ansible_network_os or ansible_user. A redaction that leaves a secret
+# fails the host and writes no file. Unreachable devices are recorded as
+# validation_state unreachable and end quietly.
+#
+# Git steps sit inside this device play, run once, so a --limit never skips
+# them. bootstrap_netbox.yml is never called from here.
+
+- name: Archive the running configuration of every backed-up device
+  hosts: all
+  gather_facts: false
+
+  pre_tasks:
+    - name: Require device credentials in the environment
+      ansible.builtin.fail:
+        msg: >-
+          BACKUP_USER and/or BACKUP_PASSWORD are not set. Export both before
+          running the playbook; device credentials come from the environment
+          only and are never written to disk or logs.
+      when: >-
+        (lookup('ansible.builtin.env', 'BACKUP_USER') | default('', true) | trim) == ''
+        or (lookup('ansible.builtin.env', 'BACKUP_PASSWORD') | default('', true) | trim) == ''
+      no_log: true
+
+    - name: Read the platform metadata from NetBox
+      ansible.builtin.set_fact:
+        config_backup_platform_meta: "{{ lookup('config_backup_platforms') }}"
+
+    - name: Derive this device's network OS and platform user
+      ansible.builtin.set_fact:
+        config_backup_device_os: >-
+          {{ config_backup_platform_meta.get(nb_platform_slug | default('', true), {}).get('ansible_network_os', '') }}
+        config_backup_platform_user: >-
+          {{ config_backup_platform_meta.get(nb_platform_slug | default('', true), {}).get('ansible_user', '') }}
+
+    - name: Expose the resolved network OS to the connection plugins
+      ansible.builtin.set_fact:
+        ansible_network_os: "{{ config_backup_device_os }}"
+
+    - name: Choose the gate outcome for this device
+      ansible.builtin.set_fact:
+        config_backup_gate: >-
+          {{ 'no_member'
+             if not (ansible_host | default('', true) | length)
+             else ('no_task'
+                   if (ansible_network_os | default('', true)) not in config_backup_os_values
+                   else ('bad_connection'
+                         if (ansible_connection | default('', true)) not in config_backup_connection_values
+                         else 'run')) }}
+
+    - name: Record no_task on the device record for a disallowed connector
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
+      vars:
+        config_backup_patch_fields:
+          validation_state: no_task
+      when: config_backup_gate == 'bad_connection'
+
+    - name: Fail the device when its connector is not allowed
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }}: ansible_connection
+          '{{ ansible_connection | default('', true) }}' is not one of
+          network_cli, httpapi, netconf or local. validation_state was set to
+          no_task and the device is failed.
+      when: config_backup_gate == 'bad_connection'
+
+    - name: Explain devices outside this run
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} skipped: the gate outcome for platform
+          '{{ nb_platform_slug | default('', true) }}' with network OS
+          '{{ ansible_network_os | default('', true) }}' and a
+          {{ 'lacking' if config_backup_gate == 'no_member' else 'present' }}
+          primary IPv4 is {{ config_backup_gate }}.
+      when: config_backup_gate in ['no_member', 'no_task']
+
+    - name: End the play for devices outside this run
+      ansible.builtin.meta: end_host
+      when: config_backup_gate in ['no_member', 'no_task']
+
+  tasks:
+    - name: Run the task file for this device's network OS
+      ansible.builtin.include_tasks:
+        file: "{{ playbook_dir }}/tasks/{{ config_backup_task_files[ansible_network_os] }}"
+
+    - name: Ensure the archive working tree exists
+      ansible.builtin.file:
+        path: "{{ config_backup_workdir }}"
+        state: directory
+        mode: '0750'
+      run_once: true
+      delegate_to: localhost
+
+    - name: List the archive files this run wrote
+      ansible.builtin.set_fact:
+        config_backup_files: >-
+          [{% for backup_host in ansible_play_hosts_all
+             if hostvars[backup_host].config_backup_written_path is defined
+          %}"{{ hostvars[backup_host].config_backup_written_path }}"{{ '' if loop.last else ',' }}{% endfor %}]
+
+    - name: Stage, commit and push the written files, or keep them local
+      ansible.builtin.command:
+        cmd: >-
+          {{ playbook_dir }}/scripts/git_sync.sh --{% for archive_file in config_backup_files %} {{ archive_file | quote }}{% endfor %}
+        chdir: "{{ config_backup_workdir }}"
+      environment:
+        BACKUP_GIT_URL: "{{ config_backup_git_url }}"
+        BACKUP_GIT_TOKEN: "{{ lookup('ansible.builtin.env', 'BACKUP_GIT_TOKEN') }}"
+        BACKUP_WORKDIR: "{{ config_backup_workdir }}"
+      register: config_backup_git_sync
+      changed_when: "'committed' in (config_backup_git_sync.stdout | default(''))"
+      run_once: true
+      delegate_to: localhost

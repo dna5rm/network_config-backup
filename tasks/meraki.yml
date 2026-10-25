@@ -1,0 +1,9 @@
+---
+# cisco.meraki placeholder: v1 collects nothing and never opens a connection.
+# The OS string stays as the spec writes it.
+- name: Record no_task for this placeholder platform
+  ansible.builtin.include_tasks:
+    file: "{{ playbook_dir }}/tasks/_no_task.yml"
+
+- name: End the play for this placeholder platform
+  ansible.builtin.meta: end_host

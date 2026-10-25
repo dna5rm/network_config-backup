@@ -1,0 +1,6 @@
+---
+# Connection override for one platform. This file is the shipped example:
+# copy it to group_vars/<platform-slug>.yml in a site copy of this tree and
+# change the value for platforms that need a different connector, for
+# example httpapi. The slug is the NetBox platform slug, hyphens included.
+ansible_connection: network_cli

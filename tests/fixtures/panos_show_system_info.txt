@@ -1,0 +1,6 @@
+operational mode: normal
+
+  model: PA-440
+  sw-version: 10.1.9
+  app-version: 10.1.9
+  platform-family: 3000
