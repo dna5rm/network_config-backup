@@ -109,10 +109,13 @@
 
     - name: List the archive files this run wrote
       ansible.builtin.set_fact:
+        # A real list, on purpose: the git step below iterates these and
+        # quotes each one. A '[ ... ]'-style rendered string would make
+        # that loop walk the string character by character.
         config_backup_files: >-
-          [{% for backup_host in ansible_play_hosts_all
-             if hostvars[backup_host].config_backup_written_path is defined
-          %}"{{ hostvars[backup_host].config_backup_written_path }}"{{ '' if loop.last else ',' }}{% endfor %}]
+          {{ ansible_play_hosts_all
+             | map('extract', hostvars, 'config_backup_written_path')
+             | select('defined') | select('string') | list }}
 
     - name: Stage, commit and push the written files, or keep them local
       ansible.builtin.command:
