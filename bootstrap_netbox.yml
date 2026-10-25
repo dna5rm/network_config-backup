@@ -2,7 +2,9 @@
 # Ensure the six NetBox custom fields this playbook uses exist.
 #
 # Creates a missing field or updates an existing one; never deletes
-# anything. Fields on dcim.platform (ansible_network_os, ansible_user) and
+# anything. Select fields keep their choices in a NetBox choice set that
+# this play also ensures (NetBox 4.x has no inline field choices).
+# Fields on dcim.platform (ansible_network_os, ansible_user) and
 # on dcim.device (observed_version, observed_at, validation_state,
 # desired_version) follow the spec exactly.
 #
@@ -50,6 +52,10 @@
         object_types: [dcim.device]
         type: text
 
+    # NetBox 4.x keeps select-field choices in a choice set; one namespaced
+    # set per select field is ensured before the field itself.
+    config_backup_choice_set_prefix: config_backup_
+
   tasks:
     - name: Report the custom fields this play ensures
       ansible.builtin.debug:
@@ -69,9 +75,78 @@
         ((lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim) == '' or
          (lookup('ansible.builtin.env', 'NETBOX_TOKEN') | default('', true) | trim) == '')
 
+    - name: Read the existing choice sets for the select fields
+      ansible.builtin.uri:
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/extras/custom-field-choice-sets/?name={{ config_backup_choice_set_prefix }}{{ item.name }}"
+        method: GET
+        headers:
+          Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+          Accept: application/json
+        status_code: 200
+        validate_certs: true
+      loop: "{{ config_backup_fields | selectattr('choices', 'defined') | list }}"
+      loop_control:
+        label: "{{ config_backup_choice_set_prefix }}{{ item.name }}"
+      register: config_backup_choice_set_read
+      no_log: true
+      failed_when: false
+
+    - name: Refuse to continue when a NetBox choice set could not be read
+      ansible.builtin.fail:
+        msg: "{{ config_backup_choice_set_prefix }}{{ item.item.name }}: NetBox choice set read failed (HTTP {{ item | config_backup_http_status }})."
+      loop: "{{ config_backup_choice_set_read.results | default([], true) }}"
+      when: not ansible_check_mode and (item | config_backup_http_status) != 200
+
+    - name: Create a missing choice set on NetBox
+      ansible.builtin.uri:
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/extras/custom-field-choice-sets/"
+        method: POST
+        headers:
+          Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+          Accept: application/json
+          Content-Type: application/json
+        body_format: json
+        body: >-
+          {{ {'name': config_backup_choice_set_prefix ~ item.item.name,
+              'extra_choices': (item.item.choices | zip(item.item.choices) | list),
+              'order_alphabetically': false} }}
+        status_code: 201
+        validate_certs: true
+      loop: "{{ config_backup_choice_set_read.results }}"
+      loop_control:
+        label: "{{ config_backup_choice_set_prefix }}{{ item.item.name }}"
+      when: not ansible_check_mode and (item | config_backup_http_status) == 200 and item.json.count == 0
+      register: config_backup_choice_set_created
+      no_log: true
+
+    - name: Update an existing choice set when its choices drifted
+      ansible.builtin.uri:
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/extras/custom-field-choice-sets/{{ item.json.results[0].id }}/"
+        method: PATCH
+        headers:
+          Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+          Accept: application/json
+          Content-Type: application/json
+        body_format: json
+        body: >-
+          {{ {'extra_choices': (item.item.choices | zip(item.item.choices) | list),
+              'order_alphabetically': false} }}
+        status_code: 200
+        validate_certs: true
+      loop: "{{ config_backup_choice_set_read.results }}"
+      loop_control:
+        label: "{{ config_backup_choice_set_prefix }}{{ item.item.name }}"
+      when: >-
+        not ansible_check_mode and
+        (item | config_backup_http_status) == 200 and
+        item.json.count > 0 and
+        (item.json.results[0].extra_choices | to_json) != ((item.item.choices | zip(item.item.choices) | list) | to_json)
+      register: config_backup_choice_set_updated
+      no_log: true
+
     - name: Read the existing custom fields from NetBox
       ansible.builtin.uri:
-        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/core/custom-fields/?name={{ item.name }}"
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/extras/custom-fields/?name={{ item.name }}"
         method: GET
         headers:
           Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
@@ -93,7 +168,7 @@
 
     - name: Create a missing custom field on NetBox
       ansible.builtin.uri:
-        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/core/custom-fields/"
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/extras/custom-fields/"
         method: POST
         headers:
           Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
@@ -106,7 +181,7 @@
               'type': item.item.type,
               'object_types': item.item.object_types,
               'required': false}
-             | combine({} if not (item.item.choices | default([], true)) else {'choices': item.item.choices}) }}
+             | combine({} if not (item.item.choices | default([], true)) else {'choice_set': ((config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.results[0].id if (config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.count > 0 else (config_backup_choice_set_created.results | selectattr('item', 'equalto', item.item) | first).json.id)}) }}
         status_code: 201
         validate_certs: true
       loop: "{{ config_backup_field_read.results }}"
@@ -117,7 +192,7 @@
 
     - name: Update an existing custom field on NetBox
       ansible.builtin.uri:
-        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/core/custom-fields/{{ item.json.results[0].id }}/"
+        url: "{{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}/api/extras/custom-fields/{{ item.json.results[0].id }}/"
         method: PATCH
         headers:
           Authorization: "Token {{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
@@ -130,7 +205,7 @@
               'type': item.item.type,
               'object_types': item.item.object_types,
               'required': false}
-             | combine({} if not (item.item.choices | default([], true)) else {'choices': item.item.choices}) }}
+             | combine({} if not (item.item.choices | default([], true)) else {'choice_set': ((config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.results[0].id if (config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.count > 0 else (config_backup_choice_set_created.results | selectattr('item', 'equalto', item.item) | first).json.id)}) }}
         status_code: 200
         validate_certs: true
       loop: "{{ config_backup_field_read.results }}"
