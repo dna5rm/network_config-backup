@@ -21,6 +21,7 @@ of the runner.
 | `backup.yml` | The device play: gate, dispatch on `ansible_network_os`, redact, archive, NetBox writeback, git sync. |
 | `bootstrap_netbox.yml` | One-time creation/update of the six NetBox custom fields. Never run by the nightly job. |
 | `inventory/netbox.yml.example` | NetBox inventory template; `./backup` renders the real inventory from it. |
+| `inventory/netbox.yml` | The same inventory committed for file-type runners; `./backup` still renders from the `.example`. |
 | `inventory/empty.yml` | Empty inventory for offline tooling and syntax checks. |
 | `group_vars/all.yml` | Connection defaults per OS, resolved from NetBox platform metadata. |
 | `group_vars/example-platform.yml` | Example per-platform connection override. |
