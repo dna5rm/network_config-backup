@@ -90,8 +90,11 @@ class Spec12_4PlaceholderFilesDoNotConnect(unittest.TestCase):
     def test_meraki_file_shape(self):
         self._placeholder_file("meraki.yml")
 
-    def test_velocloud_file_shape(self):
-        self._placeholder_file("velocloud.yml")
+    def test_velocloud_file_ends_without_a_skip_message(self):
+        doc = _load("velocloud.yml")
+        self.assertEqual(len(doc), 1)
+        self.assertEqual(doc[0]["ansible.builtin.meta"], "end_host")
+        self.assertNotIn("no collection task", str(doc))
 
     def test_no_task_file_reports_a_skip_only(self):
         doc = _load("_no_task.yml")
@@ -105,7 +108,7 @@ class Spec12_4PlaceholderFilesDoNotConnect(unittest.TestCase):
             self.assertIn("inventory_hostname", value["msg"])
 
     def test_no_task_files_have_no_connection_modules(self):
-        for name in ("f5.yml", "meraki.yml", "velocloud.yml"):
+        for name in ("f5.yml", "meraki.yml"):
             for task in _all_tasks(name):
                 for key in task:
                     base = _base(key)

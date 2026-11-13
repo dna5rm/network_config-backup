@@ -33,7 +33,8 @@ The playbook reads NetBox and writes nothing back to it.
 | `tasks/nxos.yml` | cisco.nxos.nxos collection tasks. |
 | `tasks/junos.yml` | junipernetworks.junos.junos collection tasks. |
 | `tasks/panos.yml` | paloaltonetworks.panos.panos_op over HTTPS from the runner. |
-| `tasks/f5.yml`, `tasks/meraki.yml`, `tasks/velocloud.yml` | Placeholders: report a skip message and never open a connection. |
+| `tasks/f5.yml`, `tasks/meraki.yml` | Placeholders: report a skip message and never open a connection. |
+| `tasks/velocloud.yml` | Ends the edge host. The portal dump is the run-once task in `backup.yml`. |
 | `tasks/_archive_write.yml` | Shared archive path guard and file write. |
 | `tasks/_no_task.yml` | Shared placeholder skip message. |
 | `scripts/render_inventory.sh` | Renders the temporary inventory, inserting site/platform filters. |
