@@ -133,8 +133,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-base = args.url.rstrip("/")
-host = urllib.parse.urlsplit(base).hostname
+raw = urllib.parse.urlsplit(args.url.strip())
+path = raw.path.rstrip("/")
+if path in ("", "/portal"):
+    path = "/portal/rest"
+base = urllib.parse.urlunsplit((raw.scheme, raw.netloc, path, "", "")).rstrip("/")
+host = raw.hostname
+session_cookie = ""
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(
     urllib.request.HTTPCookieProcessor(jar),
@@ -155,17 +160,20 @@ def is_tls_error(exc):
 def api(path, body=None):
     """POST one authenticated API call and return the parsed JSON; any
     failure prints one stderr line and exits."""
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if session_cookie:
+        headers["Cookie"] = session_cookie
     req = urllib.request.Request(
         base + "/" + path,
         data=json.dumps({} if body is None else body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
         resp = opener.open(req, timeout=120)
     except urllib.error.HTTPError as e:
         e.read()
-        die("error: %s failed: HTTP %s" % (path, e.code))
+        die("error: %s failed: HTTP %s for %s" % (path, e.code, req.full_url))
     except (ssl.SSLError, urllib.error.URLError, OSError) as e:
         if is_tls_error(e):
             die("error: TLS failure calling %s: %s" % (path, e))
@@ -238,6 +246,7 @@ try:
         print("error: login failed: no %s cookie issued" % SESSION_COOKIE_NAME,
               file=sys.stderr)
         sys.exit(1)
+    session_cookie = pair
     name, _, value = pair.partition("=")
     jar.set_cookie(http.cookiejar.Cookie(
         version=0, name=name, value=value,
