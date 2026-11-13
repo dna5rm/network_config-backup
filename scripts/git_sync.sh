@@ -115,35 +115,55 @@ if [ ! -d "$workdir/.git" ]; then
   fi
 fi
 
-if [ -z "$(git -C "$workdir" remote get-url origin 2>/dev/null || true)" ]; then
+if git -C "$workdir" remote get-url origin >/dev/null 2>&1; then
+  current_url="$(git -C "$workdir" remote get-url origin)"
+  if [ "$current_url" != "$url" ]; then
+    git -C "$workdir" remote set-url origin -- "$url"
+  fi
+else
   git -C "$workdir" remote add origin -- "$url"
 fi
 
 branch="$(git -C "$workdir" symbolic-ref --quiet --short HEAD || echo main)"
 
-git fetch --quiet "$workdir" 2>/dev/null || git -C "$workdir" fetch --quiet origin
+git -C "$workdir" fetch --prune --quiet origin 2>/dev/null || true
 
 local_head=""
 if git -C "$workdir" rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
   local_head="$(git -C "$workdir" rev-parse --verify HEAD)"
 fi
+
+# The remote's history is decided by the live remote, not by a leftover
+# tracking ref from an earlier run against a different (stale) archive.
 remote_ref="refs/remotes/origin/$branch"
-remote_head=""
-if git -C "$workdir" rev-parse --verify --quiet "$remote_ref" >/dev/null 2>&1; then
-  remote_head="$(git -C "$workdir" rev-parse --verify "$remote_ref")"
+remote_head="$(git -C "$workdir" ls-remote --heads origin "$branch" || true)"
+
+if [ -z "$remote_head" ]; then
+  # The remote has no branches (a recreated-empty archive). Drop any stale
+  # tracking ref left over from the previous remote and continue: the local
+  # files, with or without existing commits, get committed and pushed on top.
+  if git -C "$workdir" rev-parse --verify --quiet "$remote_ref" >/dev/null 2>&1; then
+    git -C "$workdir" update-ref -d "$remote_ref"
+  fi
+elif [ -z "$local_head" ]; then
+  # The remote has history but the working tree has no commits yet. Check that
+  # remote branch out in place without deleting the files the play just wrote.
+  fetched_head="$(printf '%s\n' "$remote_head" | awk '{print $1}' | head -n1)"
+  git -C "$workdir" checkout --quiet -B "$branch" "refs/remotes/origin/$branch" \
+    2>/dev/null \
+    || git -C "$workdir" checkout --quiet -f -B "$branch" "refs/remotes/origin/$branch"
+  echo "git_sync: adopted existing origin/$branch history at $fetched_head"
 fi
 
 # Stop rather than merge unrelated histories (no force, no allow-unrelated).
 if [ -n "$local_head" ] && [ -n "$remote_head" ]; then
-  if ! git -C "$workdir" merge-base --is-ancestor "$remote_head" "$local_head" >/dev/null 2>&1; then
+  remote_commit="$(printf '%s\n' "$remote_head" | awk '{print $1}' | head -n1)"
+  if ! git -C "$workdir" merge-base --is-ancestor "$remote_commit" "$local_head" >/dev/null 2>&1; then
     echo "git_sync: no common history with origin/$branch; stopping. Nothing was force-pushed." >&2
     exit 3
   fi
   git -C "$workdir" pull --quiet --ff-only origin "$branch" \
     || { echo "git_sync: the working tree diverged from origin/$branch; reconcile by hand. Nothing was force-pushed." >&2; exit 3; }
-elif [ -z "$local_head" ] && [ -n "$remote_head" ]; then
-  echo "git_sync: origin/$branch has history but the working tree has none; reconcile by hand. Nothing was force-pushed." >&2
-  exit 3
 fi
 
 if [ "$#" -gt 0 ]; then
