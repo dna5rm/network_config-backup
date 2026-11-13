@@ -5,7 +5,10 @@ workdir that was initialised against a repository that was later
 recreated empty:
   1. The workdir has files but no .git and the remote already carries
      history: the script adopts that history and pushes on top of it.
-  2. The workdir has a .git with no commits and a stale origin/main
+  3. A workdir merely behind origin/main fast-forwards and pushes.
+
+Cases already covered:
+  1. The workdir has a .git with no commits and a stale origin/main
      fetched from a throwaway remote, now pointed at an empty bare
      repository: the stale tracking ref is dropped and the file is pushed.
 
@@ -117,6 +120,81 @@ class StaleWorkdirRecovery(unittest.TestCase):
             capture_output=True, text=True).stdout.split()
         self.assertIn("site-a/device-a.cfg", tree)
         self.assertNotIn("old.txt", tree)
+
+
+class BehindOrUnrelatedHistory(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        self.base = Path(self.scratch.name)
+        self.ident = ("-c", "user.name=test", "-c", "user.email=test@localhost.invalid")
+
+    def tearDown(self):
+        self.scratch.cleanup()
+
+    def _seed(self, path: Path, message: str, files: dict) -> None:
+        path.mkdir(parents=True)
+        _git("init", "--quiet", "--initial-branch=main", ".", cwd=path)
+        for name, text in files.items():
+            target = path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+        _git("add", ".", cwd=path)
+        _git(*self.ident, "commit", "--quiet", "--message", message, cwd=path)
+
+    def test_behind_origin_fast_forwards_and_pushes_new_cfg(self):
+        # Bare origin carries two commits; the workdir was cloned at the
+        # first one and holds an untracked cfg file from this run.
+        bare = self.base / "origin.git"
+        seed = self.base / "seed"
+        self._seed(seed, "first", {"old.txt": "old config\n"})
+        _git("clone", "--quiet", "--bare", str(seed), str(bare))
+        _git(*self.ident, "commit", "--quiet", "--message", "second",
+             "--allow-empty", cwd=seed)
+        _git("push", "--quiet", str(bare), "main", cwd=seed)
+
+        work = self.base / "work"
+        _git("clone", "--quiet", str(seed), str(work))
+        _git("reset", "--quiet", "--hard", "HEAD~1", cwd=work)
+        cfg = work / "site-a" / "device-a.cfg"
+        cfg.parent.mkdir()
+        cfg.write_text("! device-a running config\n", encoding="utf-8")
+
+        proc = _run({"BACKUP_GIT_URL": "file://%s" % bare,
+                     "BACKUP_WORKDIR": str(work)},
+                    ["--", "site-a/device-a.cfg"])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(_commit_count(bare), 3)
+        tree = subprocess.run(
+            ["git", "-C", str(bare), "ls-tree", "--name-only", "-r", "HEAD"],
+            capture_output=True, text=True).stdout.split()
+        self.assertIn("site-a/device-a.cfg", tree)
+        self.assertIn("old.txt", tree)
+        self.assertNotIn("nothing", tree)
+
+    def test_unrelated_history_stops_without_force_push(self):
+        # Two repos with separate roots: the origin tip must survive and
+        # the script must say "no common history".
+        bare = self.base / "origin.git"
+        remote_src = self.base / "remote-src"
+        self._seed(remote_src, "remote root", {"old.txt": "remote history\n"})
+        _git("clone", "--quiet", "--bare", str(remote_src), str(bare))
+        tip_before = subprocess.run(
+            ["git", "-C", str(bare), "rev-parse", "main"],
+            capture_output=True, text=True).stdout.strip()
+
+        work = self.base / "work"
+        self._seed(work, "local root", {"site-a/device-a.cfg": "! local\n"})
+        _git("remote", "add", "origin", str(bare), cwd=work)
+
+        proc = _run({"BACKUP_GIT_URL": "file://%s" % bare,
+                     "BACKUP_WORKDIR": str(work)},
+                    ["--", "site-a/device-a.cfg"])
+        self.assertEqual(proc.returncode, 3, proc.stdout + proc.stderr)
+        self.assertIn("no common history", proc.stderr)
+        tip_after = subprocess.run(
+            ["git", "-C", str(bare), "rev-parse", "main"],
+            capture_output=True, text=True).stdout.strip()
+        self.assertEqual(tip_before, tip_after)
 
 
 if __name__ == "__main__":

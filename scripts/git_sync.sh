@@ -137,7 +137,10 @@ fi
 
 branch="$(git -C "$workdir" symbolic-ref --quiet --short HEAD || echo main)"
 
-git -C "$workdir" fetch --prune --quiet origin 2>/dev/null || true
+fetch_rc=0
+if ! git -C "$workdir" fetch --prune --quiet origin 2>/dev/null; then
+  fetch_rc=$?
+fi
 
 local_head=""
 if git -C "$workdir" rev-parse --verify --quiet HEAD >/dev/null 2>&1; then
@@ -148,6 +151,11 @@ fi
 # tracking ref from an earlier run against a different (stale) archive.
 remote_ref="refs/remotes/origin/$branch"
 remote_head="$(git -C "$workdir" ls-remote --heads origin "$branch" || true)"
+
+if [ -n "$remote_head" ] && [ "$fetch_rc" -ne 0 ]; then
+  echo "git_sync: fetch from origin/$branch failed (rc $fetch_rc); stopping. Nothing was force-pushed." >&2
+  exit 3
+fi
 
 if [ -z "$remote_head" ]; then
   # The remote has no branches (a recreated-empty archive). Drop any stale
@@ -167,14 +175,17 @@ elif [ -z "$local_head" ]; then
 fi
 
 # Stop rather than merge unrelated histories (no force, no allow-unrelated).
+# A workdir that is merely behind origin/main fast-forwards; one with a
+# genuinely unrelated root never force-pushes.
 if [ -n "$local_head" ] && [ -n "$remote_head" ]; then
   remote_commit="$(printf '%s\n' "$remote_head" | awk '{print $1}' | head -n1)"
-  if ! git -C "$workdir" merge-base --is-ancestor "$remote_commit" "$local_head" >/dev/null 2>&1; then
+  if git -C "$workdir" merge-base "$remote_commit" "$local_head" >/dev/null 2>&1; then
+    git -C "$workdir" pull --quiet --ff-only origin "$branch" \
+      || { echo "git_sync: the working tree diverged from origin/$branch; reconcile by hand. Nothing was force-pushed." >&2; exit 3; }
+  else
     echo "git_sync: no common history with origin/$branch; stopping. Nothing was force-pushed." >&2
     exit 3
   fi
-  git -C "$workdir" pull --quiet --ff-only origin "$branch" \
-    || { echo "git_sync: the working tree diverged from origin/$branch; reconcile by hand. Nothing was force-pushed." >&2; exit 3; }
 fi
 
 # The portal directory was renamed from vco-backup to velocloud. The pull above
