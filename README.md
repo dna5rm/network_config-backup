@@ -57,7 +57,7 @@ The playbook reads NetBox and writes nothing back to it.
 | `BACKUP_WORKDIR` | Archive working tree; the sync script clones the remote into it | no |
 | `VCO_USERNAME` | VeloCloud portal login; needed only when a velocloud device is inventoried | no |
 | `VCO_PASSWORD` | VeloCloud portal password, answered from the environment at run time | no |
-| `VCO_URL` | VeloCloud portal REST base URL, required when a velocloud platform is collected | yes, if collecting |
+| `VCO_URL` | VeloCloud portal REST base URL. Unset, with the other VCO variables, skips the dump. | no |
 | `MERAKI_API_KEY` | Dashboard API key. Unset skips the Meraki dump. | no |
 
 ## Device membership
@@ -72,20 +72,19 @@ whose connector is not one of `network_cli`, `httpapi`, `netconf`, `local`.
 Devices without a primary IPv4 are dropped the same way. Nothing ever
 contacts a device that did not qualify.
 
-Placeholder platforms (`f5.bigip`, `cisco.meraki`, `velocloud`) report a
-skip message and end the host without opening a connection.
+`f5.bigip` is still a placeholder. It reports a skip and ends the host
+without opening a connection.
 
-Placeholder platforms (`f5.bigip`, `cisco.meraki`, `velocloud`) report a
-skip message and end the host without opening a connection.
+Meraki and VeloCloud are not collected from the device. The per-host task
+ends the host and does not print a skip. When any inventoried device has
+that network OS, and the portal credentials are set, the playbook runs the
+matching script once with `--no-archive` and writes JSON into `meraki/` or
+`velocloud/` in the archive working tree. Git commits that tree like any
+other file. There is no tarball and no device connection.
 
-VeloCloud is backed up from the portal, not from a device: when any
-inventored device has the `velocloud` network OS, the playbook runs
-`scripts/vco_backup.py --no-archive` exactly once against the
-orchestrator portal and writes the JSON into `velocloud/` inside the
-archive working tree, so git commits and pushes it like any other file.
-There is no tarball and no device connection; the portal credentials come
-from the `VCO_USERNAME` and `VCO_PASSWORD` environment variables
-(`VCO_URL` required).
+VeloCloud uses `VCO_USERNAME`, `VCO_PASSWORD`, and `VCO_URL`. Meraki uses
+`MERAKI_API_KEY`. If any required value for that portal is empty, that
+dump is skipped and the play continues. The Meraki JSON is not redacted.
 
 ## Failure handling
 
@@ -104,8 +103,8 @@ from the `VCO_USERNAME` and `VCO_PASSWORD` environment variables
 | `junipernetworks.junos.junos` | `network_cli` |
 | `paloaltonetworks.panos.panos` | `local` (panos_op over HTTPS from the runner) |
 | `f5.bigip` | `local` (placeholder, no connection) |
-| `cisco.meraki` | `local` (placeholder, no connection) |
-| `velocloud` | `local` (placeholder, no connection) |
+| `cisco.meraki` | `local` (dashboard dump, no device connection) |
+| `velocloud` | `local` (portal dump, no device connection) |
 
 A platform that needs a different connector ships a copy of
 `group_vars/example-platform.yml` as `group_vars/<platform-slug>.yml` in

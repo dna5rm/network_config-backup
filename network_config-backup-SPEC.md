@@ -82,9 +82,11 @@ There are no device-level fields. The play reads the two platform fields and wri
 
 `paloaltonetworks.panos.panos` is confirmed. The collection `paloaltonetworks.panos` ships `plugins/httpapi/panos.py` and does not ship a terminal plugin. That string is the network OS name. It is not a `network_cli` OS.
 
-`f5.bigip`, `cisco.meraki`, and `velocloud` are dispatch keys owned by this repo. They are not Ansible `ansible_network_os` values. v1 task files for those three keys report a skip message and must not open a connection. Do not invent Dashboard, iControl, or VeloCloud API URLs.
+`f5.bigip`, `cisco.meraki`, and `velocloud` are dispatch keys owned by this repo. They are not Ansible `ansible_network_os` values. None of the three opens a device connection. `f5.bigip` reports a skip. `cisco.meraki` and `velocloud` end the host and do not print a skip.
 
-`velocloud` is a backup source of its own kind: there is no per-device task. When a velocloud device is inventoried, backup.yml runs `scripts/vco_backup.py --no-archive` once against the orchestrator portal and writes the JSON under `velocloud/` in the archive working tree, with no tarball; credentials come from `VCO_USERNAME` and `VCO_PASSWORD`, with `VCO_URL` required. The per-platform task file ends the edge host and does not print a skip.
+`velocloud` has no per-device task. When a velocloud device is inventoried and `VCO_USERNAME`, `VCO_PASSWORD`, and `VCO_URL` are all set, backup.yml runs `scripts/vco_backup.py --no-archive` once and writes JSON under `velocloud/` in the archive working tree, with no tarball. If any of those three is empty, the dump is skipped and the play continues.
+
+`cisco.meraki` has the same shape. When a meraki device is inventoried and `MERAKI_API_KEY` is set, backup.yml runs `scripts/meraki_backup.py --no-archive` once and writes JSON under `meraki/`. The JSON is not redacted. If the key is empty, the dump is skipped.
 
 Empty `ansible_network_os` means the platform is not backed up.
 
@@ -141,8 +143,8 @@ Dispatch on `ansible_network_os`. One task file per choice. Do not put more than
 | `junipernetworks.junos.junos` | `show configuration \| display set` | implement |
 | `paloaltonetworks.panos.panos` | `paloaltonetworks.panos.panos_op` cmd `show config running` | implement |
 | `f5.bigip` | none | skip message, no connection |
-| `cisco.meraki` | none | skip message, no connection |
-| `velocloud` | none | skip message, no connection |
+| `cisco.meraki` | dashboard GET dump, once | no device connection |
+| `velocloud` | orchestrator dump, once | no device connection |
 
 IOS and NX-OS use the matching `*_command` module. Junos uses `junipernetworks.junos.junos_command`. Turn the pager off before the show. Do not save the config on the device. Do not enter configuration mode.
 
@@ -203,7 +205,7 @@ The suite runs without a device and without a token.
 1. Inventory render with no site and no platform filter does not contain a site key.
 2. Inventory render with `NETBOX_SITE=site-a` contains that filter and no other site.
 3. A fixture config that still matches a secret rule after redaction fails and writes no file.
-4. `f5.bigip`, `cisco.meraki`, and `velocloud` do not call a connection plugin and write nothing to NetBox.
+4. `f5.bigip`, `cisco.meraki`, and `velocloud` do not call a device connection plugin and write nothing to NetBox.
 5. Git commit is skipped when the redacted file is unchanged.
 6. A URL with userinfo is refused.
 7. `bootstrap_netbox.yml` in check mode reports the two platform fields and does not report a third.
@@ -221,14 +223,14 @@ Semaphore templates, schedules, and the NAS remote are not part of this repo's d
 - Writing any NetBox field.
 - Comparing or overwriting the built-in serial.
 - Storing a config hash in NetBox.
-- F5, Meraki, and VeloCloud collection.
+- F5 collection.
 - Pushing the archive to the playbook remote.
 - Opening tickets.
 - Contacting any network that is not the runner's own NetBox and the devices that NetBox returned.
 
 ## 15. Decided
 
-1. `f5.bigip` and `cisco.meraki` are placeholders. v1 does not connect to them. `velocloud` is the portal dump. The strings stay as written.
+1. `f5.bigip` is a placeholder and does not connect. `cisco.meraki` is the dashboard dump. `velocloud` is the portal dump. The strings stay as written.
 2. The playbook writes nothing to NetBox.
 
 ## 16. Owner still decides
