@@ -79,7 +79,7 @@ skip message and end the host without opening a connection.
 VeloCloud is backed up from the portal, not from a device: when any
 inventored device has the `velocloud` network OS, the playbook runs
 `scripts/vco_backup.py --no-archive` exactly once against the
-orchestrator portal and writes the JSON into `vco-backup/` inside the
+orchestrator portal and writes the JSON into `velocloud/` inside the
 archive working tree, so git commits and pushes it like any other file.
 There is no tarball and no device connection; the portal credentials come
 from the `VCO_USERNAME` and `VCO_PASSWORD` environment variables

@@ -38,7 +38,7 @@ import urllib.parse
 import urllib.request
 
 # No orchestrator host is built in. Set VCO_URL or pass --url.
-VCO_BACKUP_DIR = "vco-backup"
+VCO_BACKUP_DIR = "velocloud"
 SESSION_COOKIE_NAME = "velocloud.session"
 
 
