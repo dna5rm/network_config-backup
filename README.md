@@ -55,7 +55,7 @@ The playbook reads NetBox and writes nothing back to it.
 | `BACKUP_WORKDIR` | Archive working tree; the sync script clones the remote into it | no |
 | `VCO_USERNAME` | VeloCloud portal login; needed only when a velocloud device is inventoried | no |
 | `VCO_PASSWORD` | VeloCloud portal password, answered from the environment at run time | no |
-| `VCO_URL` | VeloCloud portal REST base URL; set it to retarget away from the script default | no |
+| `VCO_URL` | VeloCloud portal REST base URL, required when a velocloud platform is collected | yes, if collecting |
 
 ## Device membership
 
@@ -82,7 +82,7 @@ orchestrator portal and writes the JSON into `vco-backup/` inside the
 archive working tree, so git commits and pushes it like any other file.
 There is no tarball and no device connection; the portal credentials come
 from the `VCO_USERNAME` and `VCO_PASSWORD` environment variables
-(`VCO_URL` optional).
+(`VCO_URL` required).
 
 ## Failure handling
 

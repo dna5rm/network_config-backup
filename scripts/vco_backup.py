@@ -37,8 +37,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-# Site values: retarget here; nothing below repeats these literals.
-VCO_URL = "https://vco109-usca1.velocloud.net/portal/rest"
+# No orchestrator host is built in. Set VCO_URL or pass --url.
 VCO_BACKUP_DIR = "vco-backup"
 SESSION_COOKIE_NAME = "velocloud.session"
 
@@ -54,8 +53,8 @@ def die(msg, code=1):
 
 parser = argparse.ArgumentParser(
     description="VeloCloud VCO backup (read path)")
-parser.add_argument("--url", default=os.environ.get("VCO_URL", VCO_URL),
-                    help="portal REST base URL (env: VCO_URL)")
+parser.add_argument("--url", default=os.environ.get("VCO_URL", ""),
+                    help="portal REST base URL (env: VCO_URL, required)")
 parser.add_argument("--username", default=os.environ.get("VCO_USERNAME", ""),
                     help="portal username (env: VCO_USERNAME)")
 parser.add_argument("--password", default=os.environ.get("VCO_PASSWORD", ""),
@@ -68,8 +67,9 @@ parser.add_argument("--no-archive", action="store_true",
                     help="skip the tar-and-delete of an existing enterprise "
                          "directory and write the files in place")
 args = parser.parse_args()
-if not (args.url or "").strip():
-    args.url = VCO_URL
+args.url = (args.url or "").strip().rstrip("/")
+if not args.url:
+    die("error: set VCO_URL or pass --url", 2)
 
 tty = sys.stderr.isatty()
 if tty:
