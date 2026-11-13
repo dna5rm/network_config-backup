@@ -32,6 +32,7 @@ import pathlib
 import ssl
 import sys
 import tarfile
+import time
 import threading
 import urllib.error
 import urllib.parse
@@ -157,9 +158,13 @@ def is_tls_error(exc):
     return False
 
 
-def api(path, body=None):
-    """POST one authenticated API call and return the parsed JSON; any
-    failure prints one stderr line and exits."""
+def api(path, body=None, soft=False):
+    """POST one authenticated API call and return the parsed JSON.
+
+    502, 503 and 504 are retried three times. When soft is set, a gateway
+    error after those retries returns None so one edge does not fail the
+    dump. Any other failure prints one stderr line and exits.
+    """
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     if session_cookie:
         headers["Cookie"] = session_cookie
@@ -169,15 +174,25 @@ def api(path, body=None):
         headers=headers,
         method="POST",
     )
-    try:
-        resp = opener.open(req, timeout=120)
-    except urllib.error.HTTPError as e:
-        e.read()
-        die("error: %s failed: HTTP %s for %s" % (path, e.code, req.full_url))
-    except (ssl.SSLError, urllib.error.URLError, OSError) as e:
-        if is_tls_error(e):
-            die("error: TLS failure calling %s: %s" % (path, e))
-        die("error: %s failed: %s" % (path, e))
+    attempts = 0
+    while True:
+        try:
+            resp = opener.open(req, timeout=120)
+            break
+        except urllib.error.HTTPError as e:
+            e.read()
+            if e.code in (502, 503, 504) and attempts < 3:
+                attempts += 1
+                time.sleep(2)
+                continue
+            if soft and e.code in (502, 503, 504):
+                skip("skip %s: HTTP %s" % (path, e.code))
+                return None
+            die("error: %s failed: HTTP %s for %s" % (path, e.code, req.full_url))
+        except (ssl.SSLError, urllib.error.URLError, OSError) as e:
+            if is_tls_error(e):
+                die("error: TLS failure calling %s: %s" % (path, e))
+            die("error: %s failed: %s" % (path, e))
     text = resp.read().decode("utf-8", errors="replace")
     try:
         return json.loads(text)
@@ -335,9 +350,12 @@ try:
             continue
         if progress is None:
             with Spin("edge %s" % edge_name):
-                stack = api("edge/getEdgeConfigurationStack", {"edgeId": eid})
+                stack = api("edge/getEdgeConfigurationStack", {"edgeId": eid}, soft=True)
         else:
-            stack = api("edge/getEdgeConfigurationStack", {"edgeId": eid})
+            stack = api("edge/getEdgeConfigurationStack", {"edgeId": eid}, soft=True)
+        if stack is None:
+            skip("skip edge %s: configuration stack unavailable" % edge_name)
+            continue
         prof_name = "no-profile"
         if isinstance(stack, list) and len(stack) > 1 and isinstance(stack[1], dict):
             prof_name = sanitize(stack[1].get("name")) or "no-profile"
