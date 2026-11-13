@@ -190,3 +190,16 @@ class Spec12_7UserinfoRefused(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_tracked_vco_backup_is_removed_on_the_next_sync(self):
+        first = _run(self._env(), ["--", "vco-backup"])
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        device = self.work / "mia0"
+        device.mkdir()
+        (device / "edge.cfg").write_text("hostname edge\n", encoding="utf-8")
+        second = _run(self._env(), ["--", "mia0/edge.cfg"])
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        names = self._bare_files()
+        self.assertIn("mia0/edge.cfg", names)
+        self.assertFalse(any(name.startswith("vco-backup/") for name in names))
+
