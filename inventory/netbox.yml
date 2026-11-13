@@ -10,7 +10,7 @@
 # runner-filters anchor below is only consumed by that render.
 #
 # Membership is decided by NetBox itself: only devices whose status is
-# active and whose primary IPv4 is set are returned. The platform custom
+# active, has a primary IPv4, and has a platform are returned. The platform custom
 # field ansible_network_os is checked by the play, before anything connects.
 
 plugin: netbox.netbox.nb_inventory
@@ -25,6 +25,7 @@ timeout: 180
 device_query_filters:
   - status: active
   - has_primary_ip: 'true'
+  - has_platform: 'true'
   # anchor: config-backup-runner-filters
 
 # A name that matches nothing: the backup never inventories virtual machines.

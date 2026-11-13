@@ -9,7 +9,7 @@ This file is the contract. The planning notes are not. If they disagree, this fi
 ## 1. Invariants
 
 1. The playbook repo contains no secret, no site name, no device name, no address, no personal domain, and no login name.
-2. Device membership is not a list in git. A device is in a run only when NetBox says it is active, it has a primary IPv4, and its platform custom field `ansible_network_os` is set.
+2. Device membership is not a list in git. A device is in a run only when NetBox says it is active, it has a primary IPv4, it has a platform, and that platform's `ansible_network_os` field is set.
 3. `staged` devices are not contacted. Any status other than `active` is not contacted.
 4. The playbook does not write built-in NetBox fields: name, status, role, platform, primary IP, serial.
 5. The playbook writes nothing to NetBox. It reads the inventory and the platform metadata; it never PATCHes, POSTs, or deletes a NetBox object.
@@ -37,7 +37,10 @@ All three are required:
 
 - device status value is `active`
 - primary IPv4 is set
+- a platform is assigned (`has_platform`)
 - platform custom field `ansible_network_os` is a non-empty choice
+
+The first three are NetBox query filters. `ansible_network_os` lives on the platform, and the device API ignores a filter on that related field, so the play gate drops those hosts after the platform lookup.
 
 Optional runner limits, applied as NetBox query filters by `./backup` only when the variable is non-empty:
 

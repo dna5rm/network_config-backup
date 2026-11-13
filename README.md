@@ -56,8 +56,9 @@ The playbook reads NetBox and writes nothing back to it.
 
 ## Device membership
 
-NetBox-side: `device_query_filters` keep `status: active` and
-`has_primary_ip: 'true'`. Play-side: the gate drops devices whose platform
+NetBox-side: `device_query_filters` keep `status: active`,
+`has_primary_ip: 'true'`, and `has_platform: 'true'`. A device with no
+platform never enters the play. Play-side: the gate drops devices whose platform
 custom field `ansible_network_os` is empty or unknown, and fails a device
 whose connector is not one of `network_cli`, `httpapi`, `netconf`, `local`.
 Devices without a primary IPv4 compose an empty `ansible_host` and are

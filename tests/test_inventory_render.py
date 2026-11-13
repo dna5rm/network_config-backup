@@ -59,7 +59,7 @@ class Spec12_1NoSiteKeyWithoutFilter(unittest.TestCase):
         self.assertEqual(_walk_keys(doc, "site"), [])
         self.assertEqual(_walk_keys(doc, "platform"), [])
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"}])
+                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"}])
 
 
 class Spec12_2SiteFilterPresent(unittest.TestCase):
@@ -67,7 +67,7 @@ class Spec12_2SiteFilterPresent(unittest.TestCase):
         rc, doc = _render({"NETBOX_SITE": "site-a"})
         self.assertEqual(rc, 0)
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"},
+                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"},
                           {"site": "site-a"}])
         self.assertEqual([v for v in _walk_keys(doc, "site") if isinstance(v, str)],
                          ["site-a"])
@@ -76,14 +76,14 @@ class Spec12_2SiteFilterPresent(unittest.TestCase):
         rc, doc = _render({"NETBOX_PLATFORM": "platform-a"})
         self.assertEqual(rc, 0)
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"},
+                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"},
                           {"platform": "platform-a"}])
 
     def test_both_filters(self):
         rc, doc = _render({"NETBOX_SITE": "site-a", "NETBOX_PLATFORM": "platform-a"})
         self.assertEqual(rc, 0)
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"},
+                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"},
                           {"site": "site-a"}, {"platform": "platform-a"}])
 
 
