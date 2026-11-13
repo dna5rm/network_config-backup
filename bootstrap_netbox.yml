@@ -25,6 +25,13 @@
       - name: ansible_network_os
         object_types: [dcim.platform]
         type: select
+        description: >-
+          Ansible network OS for devices on this platform. The backup
+          play uses it to pick the collection task. Leave it empty to
+          keep the platform out of the backup.
+        choice_set_description: >-
+          Allowed values for the backup play's ansible_network_os field.
+          Each value is the Ansible network OS string for that platform.
         choices:
           - cisco.ios.ios
           - cisco.nxos.nxos
@@ -36,6 +43,9 @@
       - name: ansible_user
         object_types: [dcim.platform]
         type: text
+        description: >-
+          Device login for this platform. The backup play uses it, and
+          falls back to BACKUP_USER when this is blank.
 
     # NetBox 4.x keeps select-field choices in a choice set; one namespaced
     # set per select field is ensured before the field itself.
@@ -93,6 +103,7 @@
         body_format: json
         body: >-
           {{ {'name': config_backup_choice_set_prefix ~ item.item.name,
+              'description': item.item.choice_set_description,
               'extra_choices': (item.item.choices | zip(item.item.choices) | list),
               'order_alphabetically': false} }}
         status_code: 201
@@ -114,7 +125,8 @@
           Content-Type: application/json
         body_format: json
         body: >-
-          {{ {'extra_choices': (item.item.choices | zip(item.item.choices) | list),
+          {{ {'description': item.item.choice_set_description,
+              'extra_choices': (item.item.choices | zip(item.item.choices) | list),
               'order_alphabetically': false} }}
         status_code: 200
         validate_certs: true
@@ -125,7 +137,8 @@
         not ansible_check_mode and
         (item | config_backup_http_status) == 200 and
         item.json.count > 0 and
-        (item.json.results[0].extra_choices | to_json) != ((item.item.choices | zip(item.item.choices) | list) | to_json)
+        ((item.json.results[0].extra_choices | to_json) != ((item.item.choices | zip(item.item.choices) | list) | to_json) or
+         (item.json.results[0].description | default('', true)) != item.item.choice_set_description)
       register: config_backup_choice_set_updated
       no_log: true
 
@@ -166,7 +179,8 @@
               'type': item.item.type,
               'object_types': item.item.object_types,
               'required': false,
-              'group_name': 'Backup'}
+              'group_name': 'Backup',
+              'description': item.item.description}
              | combine({} if not (item.item.choices | default([], true)) else {'choice_set': ((config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.results[0].id if (config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.count > 0 else (config_backup_choice_set_created.results | selectattr('item.item', 'equalto', item.item) | first).json.id)}) }}
         status_code: 201
         validate_certs: true
@@ -191,7 +205,8 @@
               'type': item.item.type,
               'object_types': item.item.object_types,
               'required': false,
-              'group_name': 'Backup'}
+              'group_name': 'Backup',
+              'description': item.item.description}
              | combine({} if not (item.item.choices | default([], true)) else {'choice_set': ((config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.results[0].id if (config_backup_choice_set_read.results | selectattr('item', 'equalto', item.item) | first).json.count > 0 else (config_backup_choice_set_created.results | selectattr('item.item', 'equalto', item.item) | first).json.id)}) }}
         status_code: 200
         validate_certs: true
