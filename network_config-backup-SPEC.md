@@ -84,7 +84,7 @@ There are no device-level fields. The play reads the two platform fields and wri
 
 `f5.bigip`, `cisco.meraki`, and `velocloud` are dispatch keys owned by this repo. They are not Ansible `ansible_network_os` values. v1 task files for those three keys report a skip message and must not open a connection. Do not invent Dashboard, iControl, or VeloCloud API URLs.
 
-`velocloud` is a placeholder. The later task, when someone writes it, uses `ansible_connection: local` and the `uri` module. It does not use `network_cli`. v1 does not write that task.
+`velocloud` is a backup source of its own kind: there is no per-device task. When a velocloud device is inventoried, backup.yml runs `scripts/vco_backup.py --no-archive` once against the orchestrator portal and writes the JSON under `vco-backup/` in the archive working tree, with no tarball; credentials come from `VCO_USERNAME` and `VCO_PASSWORD`, with `VCO_URL` optional. The per-platform task file stays a placeholder and never opens a connection.
 
 Empty `ansible_network_os` means the platform is not backed up.
 

@@ -81,6 +81,33 @@
           network_cli, httpapi, netconf or local. The device is failed.
       when: config_backup_gate == 'bad_connection'
 
+    # VeloCloud is a portal platform: there is no device session to open.
+    # When any host in the play belongs to the velocloud platform, the
+    # orchestrator is dumped exactly once, with --no-archive so the JSON
+    # lands directly in the archive working tree under vco-backup/ and git
+    # sees the diff instead of a tarball. The VeloCloud JSON is not
+    # line-redacted yet.
+    # The when looks at every host in the play, not this host, because
+    # run_once evaluates it on a single host only.
+    - name: Dump the VeloCloud orchestrator into the archive (once)
+      ansible.builtin.command:
+        cmd: >-
+          {{ playbook_dir }}/scripts/vco_backup.py --no-archive
+          --output {{ config_backup_workdir }}/vco-backup
+      environment:
+        VCO_USERNAME: "{{ lookup('ansible.builtin.env', 'VCO_USERNAME') }}"
+        VCO_PASSWORD: "{{ lookup('ansible.builtin.env', 'VCO_PASSWORD') }}"
+        VCO_URL: "{{ lookup('ansible.builtin.env', 'VCO_URL') }}"
+      when: >-
+        ansible_play_hosts_all
+        | map('extract', hostvars, 'ansible_network_os')
+        | select('defined') | select('equalto', 'velocloud')
+        | list | length > 0
+      register: config_backup_vco_dump
+      run_once: true
+      delegate_to: localhost
+      no_log: true
+
     - name: End the play for devices outside this run
       ansible.builtin.meta: end_host
       when: config_backup_gate in ['no_member', 'no_task']
@@ -98,15 +125,49 @@
       run_once: true
       delegate_to: localhost
 
+    - name: List the VeloCloud portal files in the archive (once)
+      ansible.builtin.find:
+        paths: "{{ config_backup_workdir }}/vco-backup"
+        recurse: true
+        file_type: file
+      run_once: true
+      delegate_to: localhost
+      failed_when: false
+      register: config_backup_vco_find
+
+    - name: Compute the VeloCloud file list (once)
+      ansible.builtin.set_fact:
+        # A real list of paths relative to config_backup_workdir, or an
+        # empty list when the dump did not run.
+        config_backup_vco_files: >-
+          {{ (config_backup_vco_find.files | default([])
+              | map(attribute='path')
+              | map('relpath', config_backup_workdir)
+              | list)
+             if not (config_backup_vco_find.skipped | default(false))
+             else [] }}
+      run_once: true
+
     - name: List the archive files this run wrote
       ansible.builtin.set_fact:
         # A real list, on purpose: the git step below iterates these and
         # quotes each one. A '[ ... ]'-style rendered string would make
-        # that loop walk the string character by character.
+        # that loop walk the string character by character. The VeloCloud
+        # JSON files are staged next to the per-device files, and the
+        # vco-backup directory itself is passed so git_sync.sh stages
+        # removals inside it with 'git add -A'.
         config_backup_files: >-
-          {{ ansible_play_hosts_all
-             | map('extract', hostvars, 'config_backup_written_path')
-             | select('defined') | select('string') | list }}
+          {{ (ansible_play_hosts_all
+              | map('extract', hostvars, 'config_backup_written_path')
+              | select('defined') | select('string') | list)
+             + (ansible_play_hosts_all
+                | map('extract', hostvars, 'config_backup_vco_files')
+                | select('defined') | flatten | list)
+             + (['vco-backup']
+                if (ansible_play_hosts_all
+                    | map('extract', hostvars, 'config_backup_vco_files')
+                    | select('defined') | flatten | list | length) > 0
+                else []) }}
 
     - name: Stage, commit and push the written files, or keep them local
       ansible.builtin.command:

@@ -1,5 +1,7 @@
 ---
 # velocloud placeholder: v1 collects nothing and never opens a connection.
+# The VeloCloud portal (orchestrator) dump is the run_once task in
+# backup.yml; this file only keeps the edge from opening a connection.
 # The OS string stays as the spec writes it.
 - name: Record no_task for this placeholder platform
   ansible.builtin.include_tasks:

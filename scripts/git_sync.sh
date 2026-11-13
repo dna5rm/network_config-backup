@@ -80,7 +80,15 @@ if [ -z "$url" ]; then
   exit 0
 fi
 
-# Validate the paths this run claims to have written.
+# Validate the paths this run claims to have written. A regular file is
+# staged by name. An existing directory (the VeloCloud portal dump) is
+# staged with 'git add -A' so removals inside it land in the index too.
+# Absolute paths and anything containing '..' stay refused: only plain
+# relative paths under the archive working tree are accepted.
+is_archive_directory() {
+  [ -d "$workdir/$1" ] && [ ! -L "$workdir/$1" ]
+}
+
 for path in "$@"; do
   case "$path" in
     /*|*..*)
@@ -88,6 +96,9 @@ for path in "$@"; do
       exit 2
       ;;
   esac
+  if is_archive_directory "$path"; then
+    continue
+  fi
   if [ ! -f "$workdir/$path" ]; then
     echo "git_sync: expected archive file '$workdir/$path' was not written." >&2
     exit 2
@@ -168,6 +179,11 @@ fi
 
 if [ "$#" -gt 0 ]; then
   git -C "$workdir" add -- "$@"
+  for path in "$@"; do
+    if is_archive_directory "$path"; then
+      git -C "$workdir" add -A -- "$path"
+    fi
+  done
 fi
 
 limit="all"

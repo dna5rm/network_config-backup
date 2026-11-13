@@ -111,7 +111,52 @@ class Spec12_6CommitSkippedWhenUnchanged(unittest.TestCase):
     def test_path_traversal_refused(self):
         proc = _run(self._env(), ["--", "../outside/site-a/device-a.cfg"])
         self.assertEqual(proc.returncode, 2)
+    def test_dotdot_directory_path_refused(self):
+        build = self.work / "bad"
+        build.mkdir()
+        (build / "secret.cfg").write_text("gone\n", encoding="utf-8")
+        proc = _run(self._env(), ["--", "vco-backup/../bad"])
+        self.assertEqual(proc.returncode, 2)
 
+
+class DirectoryArgumentIsStagedWithAddA(unittest.TestCase):
+    def setUp(self):
+        self.scratch = tempfile.TemporaryDirectory()
+        base = Path(self.scratch.name)
+        self.bare = base / "origin.git"
+        self.work = base / "work"
+        subprocess.run(["git", "init", "--quiet", "--bare", "--initial-branch=main", str(self.bare)], check=True)
+        self.work.mkdir()
+        self.dump = self.work / "vco-backup"
+        self.dump.mkdir()
+        (self.dump / "a.json").write_text("{}\n", encoding="utf-8")
+
+    def tearDown(self):
+        self.scratch.cleanup()
+
+    def _env(self):
+        return {"BACKUP_GIT_URL": "file://%s" % self.bare,
+                "BACKUP_WORKDIR": str(self.work)}
+
+    def _bare_files(self):
+        out = subprocess.run(
+            ["git", "-C", str(self.bare), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True, text=True)
+        return out.stdout.splitlines()
+
+    def test_directory_add_commits_and_then_stages_a_removal(self):
+        first = _run(self._env(), ["--", "vco-backup"])
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        self.assertIn("committed", first.stdout)
+        self.assertIn("vco-backup/a.json", self._bare_files())
+
+        # The next dump rewrites the tree: the file disappears. The
+        # directory argument makes 'git add -A' record the removal.
+        (self.dump / "a.json").unlink()
+        second = _run(self._env(), ["--", "vco-backup"])
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertIn("committed", second.stdout)
+        self.assertNotIn("vco-backup/a.json", self._bare_files())
 
 class Spec12_7UserinfoRefused(unittest.TestCase):
     def test_user_pass_url_refused(self):
