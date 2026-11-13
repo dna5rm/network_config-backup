@@ -161,15 +161,29 @@ if BaseInventoryPlugin is not None:
                     'config_backup_netbox: cannot reach NetBox: %s'
                     % (getattr(exc, 'reason', exc),)) from exc
 
+        def verify_file(self, path):
+            '''Only claim sources that name this plugin explicitly.
+
+            Without this the plugin claims every file it is offered and,
+            when it is the only enabled plugin, blocks YAML inventory
+            sources such as inventory/empty.yml from other parsers.
+            '''
+            if not super().verify_file(path):
+                return False
+            return 'plugin: config_backup_netbox' in open(path).read()
+
         def _populate(self, devices):
             for device in devices:
                 name = device.get('name') or ''
                 slug = platform_slug(device)
                 if not name or not slug:
                     continue
-                if slug not in self.inventory.groups:
-                    self.inventory.add_group(slug)
-                self.inventory.add_host(name, group=slug)
+                # add_group returns the sanitized name; with
+                # force_valid_group_names=silently a slug like cisco-nx-os
+                # is stored as cisco_nx_os. Membership must use the
+                # returned name so the group key always exists.
+                group = self.inventory.add_group(slug)
+                self.inventory.add_host(name, group=group)
 
                 address = ''
                 primary_ip4 = device.get('primary_ip4')

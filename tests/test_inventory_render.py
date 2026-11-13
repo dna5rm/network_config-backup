@@ -173,6 +173,31 @@ class ConfigBackupNetboxPluginHelpers(unittest.TestCase):
         self.assertEqual(module.query_pairs([{"has_primary_ip": True}]),
                          [("has_primary_ip", "true")])
 
+    def test_populate_uses_sanitized_group_name(self):
+        """force_valid_group_names=silently sanitizes group names.
+
+        add_group('cisco-nx-os') stores the group as cisco_nx_os and
+        returns that name; the returned name must drive add_host so the
+        group key exists, while nb_platform_slug keeps the NetBox slug.
+        """
+        module = _plugin_module()
+        from ansible.inventory.data import InventoryData
+        inv = InventoryData()
+        plugin = module.InventoryModule()
+        plugin.inventory = inv
+        device = {
+            "name": "sw-1",
+            "platform": {"slug": "cisco-nx-os"},
+            "primary_ip4": {"address": "192.0.2.10/24"},
+            "site": {"slug": "site-a"},
+        }
+        plugin._populate([device])
+        self.assertIn("cisco_nx_os", inv.groups)
+        self.assertIn("cisco_nx_os",
+                      [g.get_name() for g in inv.get_host("sw-1").get_groups()])
+        self.assertEqual(inv.get_host("sw-1").get_vars()["nb_platform_slug"],
+                         "cisco-nx-os")
+
     def test_query_pairs_handle_junk(self):
         module = _plugin_module()
         self.assertEqual(module.query_pairs([None, {}, {"status": "active"}]),
