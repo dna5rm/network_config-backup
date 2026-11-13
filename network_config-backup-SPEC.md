@@ -84,7 +84,7 @@ There are no device-level fields. The play reads the two platform fields and wri
 
 `f5.bigip`, `cisco.meraki`, and `velocloud` are dispatch keys owned by this repo. They are not Ansible `ansible_network_os` values. v1 task files for those three keys report a skip message and must not open a connection. Do not invent Dashboard, iControl, or VeloCloud API URLs.
 
-`velocloud` is a backup source of its own kind: there is no per-device task. When a velocloud device is inventoried, backup.yml runs `scripts/vco_backup.py --no-archive` once against the orchestrator portal and writes the JSON under `vco-backup/` in the archive working tree, with no tarball; credentials come from `VCO_USERNAME` and `VCO_PASSWORD`, with `VCO_URL` required. The per-platform task file stays a placeholder and never opens a connection.
+`velocloud` is a backup source of its own kind: there is no per-device task. When a velocloud device is inventoried, backup.yml runs `scripts/vco_backup.py --no-archive` once against the orchestrator portal and writes the JSON under `vco-backup/` in the archive working tree, with no tarball; credentials come from `VCO_USERNAME` and `VCO_PASSWORD`, with `VCO_URL` required. The per-platform task file ends the edge host and does not print a skip.
 
 Empty `ansible_network_os` means the platform is not backed up.
 
@@ -228,7 +228,7 @@ Semaphore templates, schedules, and the NAS remote are not part of this repo's d
 
 ## 15. Decided
 
-1. `f5.bigip`, `cisco.meraki`, and `velocloud` are placeholders. v1 does not connect to them. The strings stay as written.
+1. `f5.bigip` and `cisco.meraki` are placeholders. v1 does not connect to them. `velocloud` is the portal dump. The strings stay as written.
 2. The playbook writes nothing to NetBox.
 
 ## 16. Owner still decides
