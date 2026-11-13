@@ -88,7 +88,8 @@
     # sees the diff instead of a tarball. The VeloCloud JSON is not
     # line-redacted yet.
     # The when looks at every host in the play, not this host, because
-    # run_once evaluates it on a single host only.
+    # run_once evaluates it on a single host only. Missing portal
+    # credentials skip the dump. They do not fail the play.
     - name: Dump the VeloCloud orchestrator into the archive (once)
       ansible.builtin.command:
         cmd: >-
@@ -99,6 +100,9 @@
         | map('extract', hostvars, 'ansible_network_os')
         | select('defined') | select('equalto', 'velocloud')
         | list | length > 0
+        and (lookup('ansible.builtin.env', 'VCO_USERNAME') | trim | length) > 0
+        and (lookup('ansible.builtin.env', 'VCO_PASSWORD') | trim | length) > 0
+        and (lookup('ansible.builtin.env', 'VCO_URL') | trim | length) > 0
       register: config_backup_vco_dump
       run_once: true
       delegate_to: localhost
