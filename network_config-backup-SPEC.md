@@ -1,6 +1,6 @@
 # network_config-backup SPEC
 
-Status: DRAFT v6. Review only. Do not implement, commit, or push until the owner says go.
+Status: review draft only. Do not implement, commit, or push until the owner says go.
 
 Product owner: the repo owner. Implementer: an agent that has this file and no other conversation.
 
@@ -232,7 +232,7 @@ Semaphore templates, schedules, and the NAS remote are not part of this repo's d
 ## 15. Decided
 
 1. `f5.bigip`, `cisco.meraki`, and `velocloud` are placeholders. v1 does not connect to them. The strings stay as written.
-2. The playbook writes nothing to NetBox. Earlier drafts carried device-level lifecycle fields and a shared writeback task file; both are removed.
+2. The playbook writes nothing to NetBox.
 
 ## 16. Owner still decides
 

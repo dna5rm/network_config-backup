@@ -1,6 +1,6 @@
 """Git sync tests (spec 12.6 and 12.7).
 
-12.6: the commit is skipped when the redacted file is unchanged — a second
+12.6: the commit is skipped when the redacted file is unchanged: a second
 run over the same content must not add a commit to the archive repository.
 12.7: a URL that carries userinfo is refused.
 
