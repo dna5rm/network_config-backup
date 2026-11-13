@@ -1,7 +1,7 @@
 ---
 # Placeholder platforms: report and end the host.
 #
-# Included by the task files of f5.bigip and cisco.meraki. No
+# Included by the task files of f5.bigip. No
 # device connection is opened and nothing is written to NetBox.
 
 - name: Report the placeholder platform skip

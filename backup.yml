@@ -107,6 +107,22 @@
       run_once: true
       delegate_to: localhost
 
+    # Same shape as VeloCloud. Missing MERAKI_API_KEY skips the dump.
+    - name: Dump the Meraki dashboard into the archive (once)
+      ansible.builtin.command:
+        cmd: >-
+          {{ playbook_dir }}/scripts/meraki_backup.py --no-archive
+          --output {{ config_backup_workdir }}/meraki
+      when: >-
+        ansible_play_hosts_all
+        | map('extract', hostvars, 'ansible_network_os')
+        | select('defined') | select('equalto', 'cisco.meraki')
+        | list | length > 0
+        and (lookup('ansible.builtin.env', 'MERAKI_API_KEY') | trim | length) > 0
+      register: config_backup_meraki_dump
+      run_once: true
+      delegate_to: localhost
+
     - name: End the play for devices outside this run
       ansible.builtin.meta: end_host
       when: config_backup_gate in ['no_member', 'no_task']
@@ -147,6 +163,27 @@
              else [] }}
       run_once: true
 
+    - name: List the Meraki portal files in the archive (once)
+      ansible.builtin.find:
+        paths: "{{ config_backup_workdir }}/meraki"
+        recurse: true
+        file_type: file
+      run_once: true
+      delegate_to: localhost
+      failed_when: false
+      register: config_backup_meraki_find
+
+    - name: Compute the Meraki file list (once)
+      ansible.builtin.set_fact:
+        config_backup_meraki_files: >-
+          {{ (config_backup_meraki_find.files | default([])
+              | map(attribute='path')
+              | map('relpath', config_backup_workdir)
+              | list)
+             if not (config_backup_meraki_find.skipped | default(false))
+             else [] }}
+      run_once: true
+
     - name: List the archive files this run wrote
       ansible.builtin.set_fact:
         # A real list, on purpose: the git step below iterates these and
@@ -165,6 +202,14 @@
              + (['velocloud']
                 if (ansible_play_hosts_all
                     | map('extract', hostvars, 'config_backup_vco_files')
+                    | select('defined') | flatten | list | length) > 0
+                else [])
+             + (ansible_play_hosts_all
+                | map('extract', hostvars, 'config_backup_meraki_files')
+                | select('defined') | flatten | list)
+             + (['meraki']
+                if (ansible_play_hosts_all
+                    | map('extract', hostvars, 'config_backup_meraki_files')
                     | select('defined') | flatten | list | length) > 0
                 else []) }}
 

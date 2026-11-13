@@ -177,6 +177,12 @@ if [ -n "$local_head" ] && [ -n "$remote_head" ]; then
     || { echo "git_sync: the working tree diverged from origin/$branch; reconcile by hand. Nothing was force-pushed." >&2; exit 3; }
 fi
 
+# The portal directory was renamed. Drop the old tracked tree if this clone still has it.
+# Do not delete an untracked vco-backup: a caller may still be staging that name.
+if [ -d "$workdir/velocloud" ] && git -C "$workdir" ls-files -- vco-backup | grep -q .; then
+  git -C "$workdir" rm -r --quiet --ignore-unmatch -- vco-backup
+fi
+
 if [ "$#" -gt 0 ]; then
   git -C "$workdir" add -- "$@"
   for path in "$@"; do

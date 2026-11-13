@@ -33,7 +33,8 @@ The playbook reads NetBox and writes nothing back to it.
 | `tasks/nxos.yml` | cisco.nxos.nxos collection tasks. |
 | `tasks/junos.yml` | junipernetworks.junos.junos collection tasks. |
 | `tasks/panos.yml` | paloaltonetworks.panos.panos_op over HTTPS from the runner. |
-| `tasks/f5.yml`, `tasks/meraki.yml` | Placeholders: report a skip message and never open a connection. |
+| `tasks/f5.yml` | Placeholder: report a skip message and never open a connection. |
+| `tasks/meraki.yml` | Ends the host. The dashboard dump is the run-once task in `backup.yml`. |
 | `tasks/velocloud.yml` | Ends the edge host. The portal dump is the run-once task in `backup.yml`. |
 | `tasks/_archive_write.yml` | Shared archive path guard and file write. |
 | `tasks/_no_task.yml` | Shared placeholder skip message. |
@@ -57,6 +58,7 @@ The playbook reads NetBox and writes nothing back to it.
 | `VCO_USERNAME` | VeloCloud portal login; needed only when a velocloud device is inventoried | no |
 | `VCO_PASSWORD` | VeloCloud portal password, answered from the environment at run time | no |
 | `VCO_URL` | VeloCloud portal REST base URL, required when a velocloud platform is collected | yes, if collecting |
+| `MERAKI_API_KEY` | Dashboard API key. Unset skips the Meraki dump. | no |
 
 ## Device membership
 
