@@ -18,7 +18,8 @@ validate_certs: false
 config_context: false
 interfaces: false
 services: false
-fetch_all: true
+fetch_all: false
+timeout: 180
 
 device_query_filters:
   - status: active
