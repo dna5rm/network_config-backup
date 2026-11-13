@@ -4,7 +4,7 @@
 Returns one dict mapping the platform slug to that platform's
 ``ansible_network_os`` and ``ansible_user`` custom fields:
 
-    GET {NETBOX_API}/api/dcim/platforms/?limit=0
+    GET {NETBOX_API}/api/dcim/platforms/?limit=100 (paged via "next")
 
 NetBox inventory variables cannot carry platform custom fields, and device
 ``cf_`` filters do not reach platform fields, so the play reads the two
@@ -43,8 +43,13 @@ def unwrap_select(field: object) -> object:
 
 
 def read_platform_meta(api_endpoint: str, token: str) -> dict:
-    """Return {platform-slug: {ansible_network_os, ansible_user}}."""
-    url = api_endpoint.rstrip("/") + "/api/dcim/platforms/?limit=0"
+    """Return {platform-slug: {ansible_network_os, ansible_user}}.
+
+    Pages through the platform list 100 at a time so a large instance
+    never needs one giant read, and passes timeout=180 to every call so
+    a busy NetBox is not cut off by Ansible's short default timeout.
+    """
+    base = api_endpoint.rstrip("/")
     headers = {
         "Authorization": "Token %s" % token,
         "Accept": "application/json",
@@ -53,18 +58,22 @@ def read_platform_meta(api_endpoint: str, token: str) -> dict:
     # Set NETBOX_VALIDATE_CERTS=true when the certificate is public.
     raw = os.environ.get("NETBOX_VALIDATE_CERTS", "false").strip().lower()
     validate = raw in ("1", "true", "yes")
-    response = open_url(url, headers=headers, validate_certs=validate)
-    payload = json.loads(response.read())
+    url = base + "/api/dcim/platforms/?limit=100"
     meta = {}
-    for platform in payload.get("results", []):
-        slug = platform.get("slug") or ""
-        if not slug:
-            continue
-        custom_fields = platform.get("custom_fields") or {}
-        meta[slug] = {
-            "ansible_network_os": unwrap_select(custom_fields.get("ansible_network_os")),
-            "ansible_user": unwrap_select(custom_fields.get("ansible_user")),
-        }
+    while url:
+        response = open_url(
+            url, headers=headers, validate_certs=validate, timeout=180)
+        payload = json.loads(response.read())
+        for platform in payload.get("results", []):
+            slug = platform.get("slug") or ""
+            if not slug:
+                continue
+            custom_fields = platform.get("custom_fields") or {}
+            meta[slug] = {
+                "ansible_network_os": unwrap_select(custom_fields.get("ansible_network_os")),
+                "ansible_user": unwrap_select(custom_fields.get("ansible_user")),
+            }
+        url = payload.get("next") or ""
     return meta
 
 

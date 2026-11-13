@@ -35,9 +35,19 @@
         or (lookup('ansible.builtin.env', 'BACKUP_PASSWORD') | default('', true) | trim) == ''
       no_log: true
 
-    - name: Read the platform metadata from NetBox
+    # The lookup hits NetBox over the network, so run it on exactly one
+    # host. set_fact under run_once does not copy the fact to the other
+    # hosts, so a follow-up task on all hosts takes it from the first
+    # play host's hostvars.
+    - name: Read the platform metadata from NetBox (once)
       ansible.builtin.set_fact:
         config_backup_platform_meta: "{{ lookup('config_backup_platforms') }}"
+      run_once: true
+
+    - name: Share the platform metadata with every host
+      ansible.builtin.set_fact:
+        config_backup_platform_meta: "{{ hostvars[ansible_play_hosts_all | first].config_backup_platform_meta }}"
+      when: config_backup_platform_meta is not defined
 
     - name: Derive this device's network OS and platform user
       ansible.builtin.set_fact:

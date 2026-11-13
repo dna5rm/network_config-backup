@@ -33,7 +33,7 @@ def _read_platform_meta(results: list) -> dict:
         def read(self) -> bytes:
             return payload
 
-    def fake_open_url(url, headers=None, validate_certs=True):
+    def fake_open_url(url, headers=None, validate_certs=True, **kwargs):
         return _Response()
 
     module.open_url = fake_open_url
@@ -58,6 +58,50 @@ class UnwrapSelect(unittest.TestCase):
     def test_valueless_dict_composes_empty(self):
         module = _lookup_module()
         self.assertEqual(module.unwrap_select({"label": "Example OS"}), "")
+
+
+class PagedRead(unittest.TestCase):
+    def test_two_pages_are_followed_and_merged(self):
+        module = _lookup_module()
+        page_one = {
+            "results": [{
+                "slug": "first-os",
+                "custom_fields": {
+                    "ansible_network_os": "first.os", "ansible_user": "user-a"},
+            }],
+            "next": "http://192.0.2.10:8000/api/dcim/platforms/?limit=100&offset=100",
+        }
+        page_two = {
+            "results": [{
+                "slug": "second-os",
+                "custom_fields": {
+                    "ansible_network_os": "second.os", "ansible_user": "user-b"},
+            }],
+            "next": None,
+        }
+        pages = [json.dumps(page_one).encode("utf-8"), json.dumps(page_two).encode("utf-8")]
+        calls = []
+
+        class _Response:
+            def __init__(self, index):
+                self._index = index
+
+            def read(self) -> bytes:
+                return pages[self._index]
+
+        def fake_open_url(url, **kwargs):
+            calls.append(url)
+            assert kwargs.get("timeout") == 180
+            return _Response(len(calls) - 1)
+
+        module.open_url = fake_open_url
+        meta = module.read_platform_meta(_FIXTURE_API, _FIXTURE_TOKEN)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], "http://192.0.2.10:8000/api/dcim/platforms/?limit=100")
+        self.assertEqual(
+            meta,
+            {"first-os": {"ansible_network_os": "first.os", "ansible_user": "user-a"},
+             "second-os": {"ansible_network_os": "second.os", "ansible_user": "user-b"}})
 
 
 class ReadPlatformMeta(unittest.TestCase):
