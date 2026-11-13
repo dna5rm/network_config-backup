@@ -140,11 +140,13 @@ def is_tls_error(exc):
     return False
 
 
-def api_get(path):
-    """GET one authenticated API endpoint and return parsed JSON (or None for 404).
+def api_get(path, missing_ok=False):
+    """GET one authenticated API endpoint and return parsed JSON.
 
-    Honors 429 Retry-After up to 5 times, then fails. Any other failure
-    prints one stderr line (never the key or the body) and exits.
+    404 returns None. When missing_ok is set, 400 does too: a wireless
+    or switch network answers 400 for appliance endpoints. Honors 429
+    Retry-After up to 5 times, then fails. Any other failure prints one
+    stderr line (never the key or the body) and exits.
     """
     req = urllib.request.Request(
         args.url + path,
@@ -161,7 +163,7 @@ def api_get(path):
             break
         except urllib.error.HTTPError as e:
             e.read()  # drain/carry on; the body is never printed
-            if e.code == 404:
+            if e.code == 404 or (missing_ok and e.code == 400):
                 return None
             if e.code == 429 and attempts < 5:
                 attempts += 1
@@ -299,7 +301,7 @@ try:
             net_dir = org_dir / net_name
 
             def net_get(sub, fname):
-                obj = api_get("/networks/%s/%s" % (net_id, sub))
+                obj = api_get("/networks/%s/%s" % (net_id, sub), missing_ok=True)
                 if obj is not None:
                     write_json(net_dir / fname, obj)
 
