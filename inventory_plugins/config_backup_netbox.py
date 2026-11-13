@@ -112,6 +112,7 @@ if BaseInventoryPlugin is not None:
 
         def parse(self, inventory, loader, path, cache=False):
             super().parse(inventory, loader, path, cache)
+            self._read_config_data(path)
 
             api = os.environ.get('NETBOX_API') or ''
             token = os.environ.get('NETBOX_TOKEN') or ''
