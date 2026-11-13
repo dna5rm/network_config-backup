@@ -94,10 +94,6 @@
         cmd: >-
           {{ playbook_dir }}/scripts/vco_backup.py --no-archive
           --output {{ config_backup_workdir }}/vco-backup
-      environment:
-        VCO_USERNAME: "{{ lookup('ansible.builtin.env', 'VCO_USERNAME') }}"
-        VCO_PASSWORD: "{{ lookup('ansible.builtin.env', 'VCO_PASSWORD') }}"
-        VCO_URL: "{{ lookup('ansible.builtin.env', 'VCO_URL') }}"
       when: >-
         ansible_play_hosts_all
         | map('extract', hostvars, 'ansible_network_os')
@@ -106,7 +102,6 @@
       register: config_backup_vco_dump
       run_once: true
       delegate_to: localhost
-      no_log: true
 
     - name: End the play for devices outside this run
       ansible.builtin.meta: end_host

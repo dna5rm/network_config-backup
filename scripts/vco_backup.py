@@ -68,6 +68,8 @@ parser.add_argument("--no-archive", action="store_true",
                     help="skip the tar-and-delete of an existing enterprise "
                          "directory and write the files in place")
 args = parser.parse_args()
+if not (args.url or "").strip():
+    args.url = VCO_URL
 
 tty = sys.stderr.isatty()
 if tty:
