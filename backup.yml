@@ -71,16 +71,6 @@
           network_cli, httpapi, netconf or local. The device is failed.
       when: config_backup_gate == 'bad_connection'
 
-    - name: Explain devices outside this run
-      ansible.builtin.debug:
-        msg: >-
-          {{ inventory_hostname }} skipped: the gate outcome for platform
-          '{{ nb_platform_slug | default('', true) }}' with network OS
-          '{{ ansible_network_os | default('', true) }}' and a
-          {{ 'lacking' if config_backup_gate == 'no_member' else 'present' }}
-          primary IPv4 is {{ config_backup_gate }}.
-      when: config_backup_gate in ['no_member', 'no_task']
-
     - name: End the play for devices outside this run
       ansible.builtin.meta: end_host
       when: config_backup_gate in ['no_member', 'no_task']

@@ -5,52 +5,26 @@
 # site and platform runner filters in place of the anchor line. Do not run
 # this file directly.
 #
-# NETBOX_API and NETBOX_TOKEN are read from the environment by the plugin;
-# neither value is written into this file.
+# The config_backup_netbox plugin reads NETBOX_API and NETBOX_TOKEN from the
+# environment; neither value is written into this file.
 #
-# Membership is decided by NetBox itself: only devices whose status is
-# active, has a primary IPv4, and has a platform are returned. The platform custom
-# field ansible_network_os is checked by the play, before anything connects.
+# Membership: the query keeps devices whose status is active and which have
+# a primary IPv4. The plugin drops devices with no platform after the
+# query, because has_platform is not a filter every NetBox version
+# advertises. The platform custom field ansible_network_os is checked by
+# the play, before anything connects.
 
-plugin: netbox.netbox.nb_inventory
+plugin: config_backup_netbox
 
 validate_certs: false
-config_context: false
-interfaces: false
-services: false
-fetch_all: false
 timeout: 180
 
 device_query_filters:
   - status: active
   - has_primary_ip: 'true'
-  - has_platform: 'true'
   # anchor: config-backup-runner-filters
 
-# A name that matches nothing: the backup never inventories virtual machines.
+# The plugin accepts this option and ignores it: the backup never queries
+# virtual machines.
 vm_query_filters:
   - name: config-backup-no-virtual-machines
-
-group_by:
-  - platforms
-group_names_raw: true
-
-# Ansible reserves serial and tags. Rename them before they become host vars.
-rename_variables:
-  - pattern: '^serial$'
-    repl: nb_serial
-  - pattern: '^tags$'
-    repl: nb_tags
-
-compose:
-  # Each entry is a bare Jinja expression, deliberately without {{ }}:
-  # the inventory plugin composes through evaluate_expression, which
-  # rejects template delimiters and would silently drop every composed
-  # variable (ansible-core 2.19).
-  # The primary IPv4 without the prefix length. A device whose primary IP
-  # is not IPv4 composes an empty ansible_host and the play skips it.
-  ansible_host: "primary_ip4.address | default('', true) | split('/') | first"
-  nb_site_slug: "site.slug | default('', true)"
-  # The platform is the object in the device payload; accept the bare
-  # slug string too, which some inventory versions hand to compose.
-  nb_platform_slug: "(platform.slug if platform is mapping else platform) | default('', true)"

@@ -1,24 +1,30 @@
-"""Inventory render tests (spec 12.1 and 12.2).
+"""Inventory render and plugin helper tests.
 
 The render helper copies inventory/netbox.yml.example and inserts the
 optional site and platform runner filters. Without filters no site key may
 appear anywhere in the rendered inventory; with NETBOX_SITE=site-a that one
 filter must appear and no other site.
+
+The plugin helper tests run against inventory_plugins/config_backup_netbox
+without ansible installed and without a live NetBox.
 """
 
+import importlib.util
 import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-import jinja2
-import yaml
-
 from tests import _REPO
+
+import yaml
 
 RENDER = _REPO / "scripts" / "render_inventory.sh"
 EXAMPLE = _REPO / "inventory" / "netbox.yml.example"
+PLUGIN = _REPO / "inventory_plugins" / "config_backup_netbox.py"
+
+BASE_FILTERS = [{"status": "active"}, {"has_primary_ip": "true"}]
 
 
 def _render(env_overrides: dict) -> tuple[int, dict]:
@@ -52,14 +58,19 @@ def _walk_keys(node, wanted: str) -> list:
     return hits
 
 
+def _plugin_module():
+    spec = importlib.util.spec_from_file_location("config_backup_netbox", PLUGIN)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class Spec12_1NoSiteKeyWithoutFilter(unittest.TestCase):
     def test_no_site_filter_in_render(self):
         rc, doc = _render({})
         self.assertEqual(rc, 0)
         self.assertEqual(_walk_keys(doc, "site"), [])
-        self.assertEqual(_walk_keys(doc, "platform"), [])
-        self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"}])
+        self.assertEqual(doc.get("device_query_filters"), BASE_FILTERS)
 
 
 class Spec12_2SiteFilterPresent(unittest.TestCase):
@@ -67,8 +78,7 @@ class Spec12_2SiteFilterPresent(unittest.TestCase):
         rc, doc = _render({"NETBOX_SITE": "site-a"})
         self.assertEqual(rc, 0)
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"},
-                          {"site": "site-a"}])
+                         BASE_FILTERS + [{"site": "site-a"}])
         self.assertEqual([v for v in _walk_keys(doc, "site") if isinstance(v, str)],
                          ["site-a"])
 
@@ -76,15 +86,13 @@ class Spec12_2SiteFilterPresent(unittest.TestCase):
         rc, doc = _render({"NETBOX_PLATFORM": "platform-a"})
         self.assertEqual(rc, 0)
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"},
-                          {"platform": "platform-a"}])
+                         BASE_FILTERS + [{"platform": "platform-a"}])
 
     def test_both_filters(self):
         rc, doc = _render({"NETBOX_SITE": "site-a", "NETBOX_PLATFORM": "platform-a"})
         self.assertEqual(rc, 0)
         self.assertEqual(doc.get("device_query_filters"),
-                         [{"status": "active"}, {"has_primary_ip": "true"}, {"has_platform": "true"},
-                          {"site": "site-a"}, {"platform": "platform-a"}])
+                         BASE_FILTERS + [{"site": "site-a"}, {"platform": "platform-a"}])
 
 
 class RenderRefusesNonSlugs(unittest.TestCase):
@@ -103,48 +111,73 @@ class RenderedInventoryShape(unittest.TestCase):
     def test_membership_and_vm_shape_unchanged(self):
         rc, doc = _render({})
         self.assertEqual(rc, 0)
-        self.assertEqual(doc.get("plugin"), "netbox.netbox.nb_inventory")
-        self.assertEqual(doc.get("group_by"), ["platforms"])
-        self.assertTrue(doc.get("group_names_raw"))
+        self.assertEqual(doc.get("plugin"), "config_backup_netbox")
+        self.assertTrue(doc.get("group_names_raw") is None)
         self.assertEqual(doc.get("vm_query_filters"),
                          [{"name": "config-backup-no-virtual-machines"}])
         self.assertNotIn("api_endpoint", doc)
         self.assertNotIn("token", doc)
-        compose = doc.get("compose") or {}
-        self.assertIn("ansible_host", compose)
-        self.assertIn("nb_site_slug", compose)
-        self.assertIn("nb_platform_slug", compose)
-        self.assertNotIn("nb_device_id", compose)
+        self.assertNotIn("has_platform",
+                         str(doc.get("device_query_filters")))
+        self.assertNotIn("nb_device_id", doc)
 
-
-class ComposePlatformSlugAcceptsBothShapes(unittest.TestCase):
-    """The nb_platform_slug compose must work for either platform shape.
-
-    The compose entry is a bare Jinja expression: the netbox plugin
-    composes through evaluate_expression, which rejects {{ }} template
-    delimiters (ansible-core 2.19) and would silently drop every
-    composed variable. The expression falls back to the slug string
-    when the plugin hands compose a slug instead of the platform
-    object, and composes empty when there is no platform at all.
-    """
-
-    def _compose_slug(self, variables: dict) -> str:
+    def test_compose_and_group_by_are_gone(self):
         rc, doc = _render({})
         self.assertEqual(rc, 0)
-        value = doc["compose"]["nb_platform_slug"]
-        self.assertNotIn("{{", value)
-        return jinja2.Template("{{ %s }}" % value).render(**variables)
+        self.assertNotIn("compose", doc)
+        self.assertNotIn("group_by", doc)
+
+
+def _render_text() -> str:
+    return EXAMPLE.read_text(encoding="utf-8")
+
+
+class ConfigBackupNetboxPluginHelpers(unittest.TestCase):
+    """platform_slug and query_pairs decide membership and the querystring.
+
+    has_platform must not reach the NetBox query: Citco NetBox 4.4 does not
+    advertise it, and the plugin removes devices with no platform itself.
+    """
 
     def test_platform_object_uses_its_slug(self):
+        module = _plugin_module()
         self.assertEqual(
-            self._compose_slug({"platform": {"slug": "example-os", "name": "Example OS"}}),
+            module.platform_slug({"platform": {"slug": "example-os",
+                                               "name": "Example OS"}}),
             "example-os")
 
     def test_platform_string_is_used_directly(self):
-        self.assertEqual(self._compose_slug({"platform": "example-os"}), "example-os")
+        module = _plugin_module()
+        self.assertEqual(module.platform_slug({"platform": "example-os"}), "example-os")
 
-    def test_missing_platform_composes_empty(self):
-        self.assertEqual(self._compose_slug({}), "")
+    def test_missing_or_null_platform_is_empty(self):
+        module = _plugin_module()
+        self.assertEqual(module.platform_slug({"platform": None}), "")
+        self.assertEqual(module.platform_slug({}), "")
+
+    def test_query_pairs_flatten_filters(self):
+        module = _plugin_module()
+        pairs = module.query_pairs([{"status": "active"},
+                                    {"has_primary_ip": "true"}])
+        self.assertEqual(pairs, [("status", "active"), ("has_primary_ip", "true")])
+
+    def test_query_pairs_drop_has_platform(self):
+        module = _plugin_module()
+        pairs = module.query_pairs([{"status": "active"},
+                                    {"has_platform": "true"},
+                                    {"site": "site-a"}])
+        self.assertEqual(pairs, [("status", "active"), ("site", "site-a")])
+
+    def test_query_pairs_render_bools(self):
+        module = _plugin_module()
+        self.assertEqual(module.query_pairs([{"has_primary_ip": True}]),
+                         [("has_primary_ip", "true")])
+
+    def test_query_pairs_handle_junk(self):
+        module = _plugin_module()
+        self.assertEqual(module.query_pairs([None, {}, {"status": "active"}]),
+                         [("status", "active")])
+        self.assertEqual(module.query_pairs(None), [])
 
 
 if __name__ == "__main__":

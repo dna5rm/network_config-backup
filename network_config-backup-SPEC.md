@@ -37,10 +37,10 @@ All three are required:
 
 - device status value is `active`
 - primary IPv4 is set
-- a platform is assigned (`has_platform`)
+- a platform is assigned (the plugin drops devices with no platform after the query)
 - platform custom field `ansible_network_os` is a non-empty choice
 
-The first three are NetBox query filters. `ansible_network_os` lives on the platform, and the device API ignores a filter on that related field, so the play gate drops those hosts after the platform lookup.
+The first two are NetBox query filters. The plugin never sends `has_platform`; it is not a filter every NetBox version advertises, so devices with no platform are removed by the plugin after the query. `ansible_network_os` lives on the platform, and the device API ignores a filter on that related field, so the play gate drops those hosts after the platform lookup.
 
 Optional runner limits, applied as NetBox query filters by `./backup` only when the variable is non-empty:
 
@@ -53,13 +53,7 @@ Empty means no filter. The playbook source does not contain site slugs or platfo
 
 `vm_query_filters` is a name that matches nothing. Do not inventory virtual machines.
 
-Inventory plugin: `netbox.netbox.nb_inventory`.
-
-```yaml
-group_by:
-  - platforms
-group_names_raw: true
-```
+Inventory plugin: `config_backup_netbox` (in `inventory_plugins/`). It queries only devices, paginates on the next URL, and groups every host under its platform slug: the group name is the slug itself. Virtual machines are never queried.
 
 `ansible_host` is the primary IPv4 without the prefix length. `NETBOX_API` has no `/api` suffix. `NETBOX_TOKEN` comes from the environment. Neither value is written into `inventory/netbox.yml`.
 
@@ -200,7 +194,7 @@ It refuses to run if `NETBOX_API`, `NETBOX_TOKEN`, `BACKUP_USER`, or `BACKUP_PAS
 
 It writes a temporary inventory from `inventory/netbox.yml.example` plus the optional site and platform filters, runs `ansible-playbook backup.yml`, and deletes the temporary inventory.
 
-Extra arguments pass through. `./backup --limit <group>` is allowed. The group name is a NetBox slug when `group_names_raw` is true.
+Extra arguments pass through. `./backup --limit <group>` is allowed. The group name is the platform slug.
 
 ## 12. Tests
 

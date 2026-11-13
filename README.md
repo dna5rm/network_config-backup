@@ -56,13 +56,15 @@ The playbook reads NetBox and writes nothing back to it.
 
 ## Device membership
 
-NetBox-side: `device_query_filters` keep `status: active`,
-`has_primary_ip: 'true'`, and `has_platform: 'true'`. A device with no
-platform never enters the play. Play-side: the gate drops devices whose platform
+NetBox-side: `device_query_filters` keep `status: active` and
+`has_primary_ip: 'true'`. The inventory plugin drops devices with no
+platform after the query; `has_platform` is not a query filter every
+NetBox version advertises, so the plugin never sends it and removes
+platform-less devices instead. Play-side: the gate drops devices whose
 custom field `ansible_network_os` is empty or unknown, and fails a device
 whose connector is not one of `network_cli`, `httpapi`, `netconf`, `local`.
-Devices without a primary IPv4 compose an empty `ansible_host` and are
-dropped the same way. Nothing ever contacts a device that did not qualify.
+Devices without a primary IPv4 are dropped the same way. Nothing ever
+contacts a device that did not qualify.
 
 Placeholder platforms (`f5.bigip`, `cisco.meraki`, `velocloud`) report a
 skip message and end the host without opening a connection.
