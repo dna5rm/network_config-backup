@@ -15,7 +15,7 @@
 
 plugin: netbox.netbox.nb_inventory
 
-validate_certs: true
+validate_certs: false
 config_context: false
 interfaces: false
 services: false

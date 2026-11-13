@@ -49,7 +49,11 @@ def read_platform_meta(api_endpoint: str, token: str) -> dict:
         "Authorization": "Token %s" % token,
         "Accept": "application/json",
     }
-    response = open_url(url, headers=headers, validate_certs=True)
+    # Internal CAs are the common case for this playbook.
+    # Set NETBOX_VALIDATE_CERTS=true when the certificate is public.
+    raw = os.environ.get("NETBOX_VALIDATE_CERTS", "false").strip().lower()
+    validate = raw in ("1", "true", "yes")
+    response = open_url(url, headers=headers, validate_certs=validate)
     payload = json.loads(response.read())
     meta = {}
     for platform in payload.get("results", []):
