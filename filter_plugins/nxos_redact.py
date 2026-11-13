@@ -41,6 +41,20 @@ REDACT_RULES: List[Tuple[str, re.Pattern]] = [
         re.compile(r"^\s*(tacacs-server|radius-server)\s+key\b", re.IGNORECASE),
     ),
     (
+        "tacacs-server or radius-server host with a key",
+        re.compile(
+            r"^\s*(tacacs-server|radius-server)\s+host\b.*\bkey\b", re.IGNORECASE
+        ),
+    ),
+    (
+        "snmp-server host line",
+        re.compile(r"^\s*snmp-server\s+host\b", re.IGNORECASE),
+    ),
+    (
+        "key 0-7 assignment anywhere on the line",
+        re.compile(r"\bkey\s+[0-7]\s+\S+", re.IGNORECASE),
+    ),
+    (
         "crypto isakmp key",
         re.compile(r"crypto\s+isakmp\s+key", re.IGNORECASE),
     ),
@@ -74,6 +88,20 @@ LEAK_RULES: List[Tuple[str, re.Pattern]] = [
     (
         "type-7 key material",
         re.compile(r"\b[0-9A-F]{10,}\b"),
+    ),
+    (
+        "server host key line",
+        re.compile(
+            r"^\s*(tacacs-server|radius-server)\s+host\b.*\bkey\b", re.IGNORECASE
+        ),
+    ),
+    (
+        "snmp-server host line",
+        re.compile(r"^\s*snmp-server\s+host\b", re.IGNORECASE),
+    ),
+    (
+        "key 0-7 assignment anywhere on the line",
+        re.compile(r"\bkey\s+[0-7]\s+\S+", re.IGNORECASE),
     ),
 ]
 

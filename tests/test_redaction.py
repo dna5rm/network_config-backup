@@ -250,5 +250,28 @@ class SyntheticEwcType7ConfigIsFullyRedacted(unittest.TestCase):
         self.assertEqual(IOS.ios_redact(line), IOS.PLACEHOLDER + "\n")
 
 
+class NxosServerHostSecretLinesAreRedacted(unittest.TestCase):
+    """Fake tacacs/snmp host lines with key material are fully removed."""
+
+    LINES = (
+        'tacacs-server host 192.0.2.10 key 7 "not-a-real-type7"\n',
+        'snmp-server host 192.0.2.11 traps version 2c not-a-real-community\n',
+    )
+
+    def test_fake_server_host_lines_are_replaced_whole(self):
+        for line in self.LINES:
+            self.assertEqual(NXOS.nxos_redact(line), NXOS.PLACEHOLDER + "\n")
+
+    def test_fake_server_host_lines_report_no_leak_after_redaction(self):
+        redacted = NXOS.nxos_redact("".join(self.LINES))
+        self.assertEqual(NXOS.nxos_leaks(redacted), [])
+
+    def test_normal_lines_are_kept(self):
+        config = ("feature bgp\n" + "".join(self.LINES) + "end\n")
+        out = NXOS.nxos_redact(config)
+        self.assertIn("feature bgp", out)
+        self.assertIn("end", out)
+
+
 if __name__ == "__main__":
     unittest.main()
