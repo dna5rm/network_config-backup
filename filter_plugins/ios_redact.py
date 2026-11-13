@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Cisco IOS / IOS-XE redaction and version parsing for network_config-backup.
+"""Cisco IOS / IOS-XE redaction for network_config-backup.
 
 Filters (spec section 8: each platform file owns its own rule list):
 
     {{ config | ios_redact }}   replace whole credential lines with a comment
     {{ redacted | ios_leaks }}  list the rule ids that still match a redacted
                                 text (the fail-closed backstop)
-    {{ output | ios_version }}  the version token from 'show version' output,
-                                empty string when nothing matches
 
 A matching redaction line is replaced in full, indentation included, with
 ios_PLACEHOLDER. Other lines and the trailing newline survive. Leak rules
@@ -100,11 +98,6 @@ LEAK_RULES: List[Tuple[str, re.Pattern]] = [
     ),
 ]
 
-# show version: 'Version' following a line start, comma or dot.
-VERSION_PATTERNS = [
-    re.compile(r"(?im)(?:^|[,.\s])Version\s+([0-9A-Za-z.()]+)"),
-]
-
 
 def _line_matches(rules: List[Tuple[str, re.Pattern]], line: str) -> bool:
     return any(pattern.search(line) for _, pattern in rules)
@@ -143,23 +136,11 @@ def ios_leaks(config: Optional[str]) -> List[str]:
     )
 
 
-def ios_version(text: Optional[str]) -> str:
-    """Return the version token from 'show version' output, or ''."""
-    if text is None:
-        return ""
-    for pattern in VERSION_PATTERNS:
-        found = pattern.search(str(text))
-        if found:
-            return found.group(1)
-    return ""
-
-
 class FilterModule:
-    """Expose the IOS redaction and version filters."""
+    """Expose the IOS redaction filters."""
 
     def filters(self) -> Dict[str, object]:
         return {
             "ios_redact": ios_redact,
             "ios_leaks": ios_leaks,
-            "ios_version": ios_version,
         }

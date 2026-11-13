@@ -1,2 +1,0 @@
-Device name: device-a
-Bootflash sync status: sync done

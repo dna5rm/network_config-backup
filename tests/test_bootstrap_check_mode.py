@@ -1,8 +1,8 @@
-"""Bootstrap check-mode test (spec 12.8).
+"""Bootstrap check-mode test (spec 12.7).
 
 Running bootstrap_netbox.yml in check mode against an empty inventory must
-report the six custom fields and no seventh, and no NetBox call is needed.
-Skipped with a clear reason when ansible-playbook is not installed.
+report the two platform custom fields and no third, and no NetBox call is
+needed. Skipped with a clear reason when ansible-playbook is not installed.
 """
 
 import os
@@ -13,13 +13,9 @@ import unittest
 
 from tests import _REPO
 
-SIX_FIELDS = {
+PLATFORM_FIELDS = {
     "ansible_network_os",
     "ansible_user",
-    "observed_version",
-    "observed_at",
-    "validation_state",
-    "desired_version",
 }
 
 ANSIBLE_PLAYBOOK = shutil.which("ansible-playbook")
@@ -27,7 +23,7 @@ ANSIBLE_PLAYBOOK = shutil.which("ansible-playbook")
 
 @unittest.skipUnless(ANSIBLE_PLAYBOOK,
                      "ansible-playbook is not installed")
-class Spec12_8BootstrapCheckMode(unittest.TestCase):
+class Spec12_7BootstrapCheckMode(unittest.TestCase):
     def _check_run(self):
         with tempfile.TemporaryDirectory() as scratch:
             env = {
@@ -43,7 +39,7 @@ class Spec12_8BootstrapCheckMode(unittest.TestCase):
                 timeout=300,
             )
 
-    def test_check_mode_reports_exactly_six_fields(self):
+    def test_check_mode_reports_exactly_the_platform_fields(self):
         proc = self._check_run()
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
@@ -52,8 +48,8 @@ class Spec12_8BootstrapCheckMode(unittest.TestCase):
             # The play prints: "msg": "custom_field <name> object=... type=..."
             if '"msg": "custom_field ' in line:
                 reported.add(line.split('"msg": "custom_field ')[1].split()[0])
-        self.assertEqual(reported, SIX_FIELDS)
-        # No seventh field was reported.
+        self.assertEqual(reported, PLATFORM_FIELDS)
+        # No third field was reported.
         self.assertNotIn("custom_field secret", proc.stdout)
         self.assertNotIn("custom_field serial", proc.stdout)
 

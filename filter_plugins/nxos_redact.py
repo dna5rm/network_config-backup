@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Cisco NX-OS redaction and version parsing for network_config-backup.
+"""Cisco NX-OS redaction for network_config-backup.
 
 Filters (spec section 8: each platform file owns its own rule list):
 
     {{ config | nxos_redact }}   replace whole credential lines with a comment
     {{ redacted | nxos_leaks }}  list the rule ids that still match a redacted
                                  text (the fail-closed backstop)
-    {{ output | nxos_version }}  the version token from 'show version' output,
-                                 empty string when nothing matches
 
-NX-OS prints the running version as 'system:      version 9.3(10)'; the
-parser prefers that line and falls back to the NX-OS banner. A matching
-redaction line is replaced in full with nxos_PLACEHOLDER. No rule prints
-matched line content: the failure message names the rule id, not the secret.
+A matching redaction line is replaced in full with nxos_PLACEHOLDER. No rule
+prints matched line content: the failure message names the rule id, not the
+secret.
 """
 
 from __future__ import annotations
@@ -80,12 +77,6 @@ LEAK_RULES: List[Tuple[str, re.Pattern]] = [
     ),
 ]
 
-VERSION_PATTERNS = [
-    re.compile(r"(?im)^\s*system:\s*version\s+(\S+)"),
-    re.compile(r"(?im)\bNX-OS\s+v(\S+)"),
-    re.compile(r"(?im)\bversion\s+([0-9][0-9A-Za-z().-]*)"),
-]
-
 
 def _line_matches(rules: List[Tuple[str, re.Pattern]], line: str) -> bool:
     return any(pattern.search(line) for _, pattern in rules)
@@ -124,23 +115,11 @@ def nxos_leaks(config: Optional[str]) -> List[str]:
     )
 
 
-def nxos_version(text: Optional[str]) -> str:
-    """Return the version token from 'show version' output, or ''."""
-    if text is None:
-        return ""
-    for pattern in VERSION_PATTERNS:
-        found = pattern.search(str(text))
-        if found:
-            return found.group(1)
-    return ""
-
-
 class FilterModule:
-    """Expose the NX-OS redaction and version filters."""
+    """Expose the NX-OS redaction filters."""
 
     def filters(self) -> Dict[str, object]:
         return {
             "nxos_redact": nxos_redact,
             "nxos_leaks": nxos_leaks,
-            "nxos_version": nxos_version,
         }

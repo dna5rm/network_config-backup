@@ -10,11 +10,11 @@
 # Optional: NETBOX_SITE, NETBOX_PLATFORM (inserted by ./backup),
 # BACKUP_GIT_URL, BACKUP_GIT_TOKEN, BACKUP_WORKDIR.
 #
-# The play writes only the device custom fields observed_version,
-# observed_at and validation_state. It never writes desired_version,
-# ansible_network_os or ansible_user. A redaction that leaves a secret
-# fails the host and writes no file. Unreachable devices are recorded as
-# validation_state unreachable and end quietly.
+# The play is read-only against NetBox: the inventory plugin returns
+# devices and the platform-metadata lookup returns the two platform custom
+# fields, and nothing is written back to NetBox at any point. A device whose
+# config pull fails fails the host and writes no archive file. A redaction
+# that leaves a secret fails the host and writes no file.
 #
 # Git steps sit inside this device play, run once, so a --limit never skips
 # them. bootstrap_netbox.yml is never called from here.
@@ -63,21 +63,12 @@
                          if (ansible_connection | default('', true)) not in config_backup_connection_values
                          else 'run')) }}
 
-    - name: Record no_task on the device record for a disallowed connector
-      ansible.builtin.include_tasks:
-        file: "{{ playbook_dir }}/tasks/_netbox_patch.yml"
-      vars:
-        config_backup_patch_fields:
-          validation_state: no_task
-      when: config_backup_gate == 'bad_connection'
-
     - name: Fail the device when its connector is not allowed
       ansible.builtin.fail:
         msg: >-
           {{ inventory_hostname }}: ansible_connection
           '{{ ansible_connection | default('', true) }}' is not one of
-          network_cli, httpapi, netconf or local. validation_state was set to
-          no_task and the device is failed.
+          network_cli, httpapi, netconf or local. The device is failed.
       when: config_backup_gate == 'bad_connection'
 
     - name: Explain devices outside this run

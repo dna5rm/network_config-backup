@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""Junos redaction and version parsing for network_config-backup.
+"""Junos redaction for network_config-backup.
 
 Filters (spec section 8: each platform file owns its own rule list):
 
     {{ config | junos_redact }}   replace whole credential lines with a comment
     {{ redacted | junos_leaks }}  list the rule ids that still match a redacted
                                   text (the fail-closed backstop)
-    {{ output | junos_version }}  the version token from 'show version' output,
-                                  empty string when nothing matches
 
 Input is 'show configuration | display set' output: one 'set ...' line per
 statement. Redaction rules drop set lines that assign a password, secret,
@@ -54,10 +52,6 @@ LEAK_RULES: List[Tuple[str, re.Pattern]] = [
     ),
 ]
 
-VERSION_PATTERNS = [
-    re.compile(r"(?im)^\s*Junos:\s*([0-9][^\s,]+)"),
-]
-
 
 def _line_matches(rules: List[Tuple[str, re.Pattern]], line: str) -> bool:
     return any(pattern.search(line) for _, pattern in rules)
@@ -96,23 +90,11 @@ def junos_leaks(config: Optional[str]) -> List[str]:
     )
 
 
-def junos_version(text: Optional[str]) -> str:
-    """Return the version token from 'show version' output, or ''."""
-    if text is None:
-        return ""
-    for pattern in VERSION_PATTERNS:
-        found = pattern.search(str(text))
-        if found:
-            return found.group(1)
-    return ""
-
-
 class FilterModule:
-    """Expose the Junos redaction and version filters."""
+    """Expose the Junos redaction filters."""
 
     def filters(self) -> Dict[str, object]:
         return {
             "junos_redact": junos_redact,
             "junos_leaks": junos_leaks,
-            "junos_version": junos_version,
         }

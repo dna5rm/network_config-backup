@@ -48,7 +48,6 @@ compose:
   # The primary IPv4 without the prefix length. A device whose primary IP
   # is not IPv4 composes an empty ansible_host and the play skips it.
   ansible_host: "primary_ip4.address | default('', true) | split('/') | first"
-  nb_device_id: "id | default('', true)"
   nb_site_slug: "site.slug | default('', true)"
   # The platform is the object in the device payload; accept the bare
   # slug string too, which some inventory versions hand to compose.

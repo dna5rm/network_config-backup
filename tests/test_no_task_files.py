@@ -1,13 +1,14 @@
-"""Static no-task guarantee tests (spec 12.5, 4, 8).
+"""Static placeholder-guarantee tests (spec 12.4, section 4, section 8).
 
-Spec 12.5: the task files of f5.bigip, cisco.meraki and velocloud must not
+Spec 12.4: the task files of f5.bigip, cisco.meraki and velocloud must not
 call a connection plugin. They parse as YAML here and may only include the
 placeholder task file and end the host.
-Spec 4: those three placeholders must set validation_state to no_task.
+Spec 4: those three placeholders report a skip message and write nothing
+to NetBox.
 Spec 8: every platform rule list is non-empty (asserted in test_redaction).
 
-The NetBox writeback tasks run on the runner and are allowed; a device
-connection module is not.
+The archive tasks run on the runner and are allowed; a device connection
+module is not.
 """
 
 import unittest
@@ -67,7 +68,7 @@ def _all_tasks(name):
     return list(_walk_tasks(_load(name)))
 
 
-class Spec12_5PlaceholderFilesDoNotConnect(unittest.TestCase):
+class Spec12_4PlaceholderFilesDoNotConnect(unittest.TestCase):
     def _placeholder_file(self, name):
         doc = _load(name)
         self.assertIsInstance(doc, list)
@@ -92,14 +93,16 @@ class Spec12_5PlaceholderFilesDoNotConnect(unittest.TestCase):
     def test_velocloud_file_shape(self):
         self._placeholder_file("velocloud.yml")
 
-    def test_no_task_file_records_no_task(self):
+    def test_no_task_file_reports_a_skip_only(self):
         doc = _load("_no_task.yml")
-        self.assertTrue(all(_module_key(t, "include_tasks")[0] for t in doc))
+        self.assertTrue(doc)
         for task in doc:
-            key, value = _module_key(task, "include_tasks")
-            self.assertEqual(value["file"], "{{ playbook_dir }}/tasks/_netbox_patch.yml")
-            self.assertEqual(task["vars"]["config_backup_patch_fields"],
-                             {"validation_state": "no_task"})
+            bases = {_base(k) for k in task}
+            self.assertTrue(bases <= {"debug", "name"},
+                            "_no_task.yml has unexpected task keys %s" % bases)
+            key, value = _module_key(task, "debug")
+            self.assertIsNotNone(key)
+            self.assertIn("inventory_hostname", value["msg"])
 
     def test_no_task_files_have_no_connection_modules(self):
         for name in ("f5.yml", "meraki.yml", "velocloud.yml"):
@@ -115,7 +118,7 @@ class Spec12_5PlaceholderFilesDoNotConnect(unittest.TestCase):
         doc = _all_tasks("panos.yml")
         op_tasks = [t for t in doc if any(str(k).endswith("panos_op") for k in t)]
         # The collection order is a contract: set-format output first, then
-        # the two reads, then the default-format restore on each exit path
+        # the collect, then the default-format restore on each exit path
         # (block rescue and the success path after the block). A bare
         # 'show config running' answers as one flattened line that the
         # redactor cannot split, so the set-format request is mandatory.
@@ -124,7 +127,6 @@ class Spec12_5PlaceholderFilesDoNotConnect(unittest.TestCase):
             commands,
             ["set cli config-output-format set",
              "show config running",
-             "show system info",
              "set cli config-output-format default",
              "set cli config-output-format default"])
         for task in op_tasks:
@@ -136,19 +138,17 @@ class Spec12_5PlaceholderFilesDoNotConnect(unittest.TestCase):
             self.assertTrue(task["no_log"])
 
 
-class NetboxPatchNeverTouchesADevice(unittest.TestCase):
-    def test_writeback_is_delegated_and_no_log(self):
-        doc = _all_tasks("_netbox_patch.yml")
-        uri_tasks = [t for t in doc if _module_key(t, "uri")[0]]
-        self.assertEqual(len(uri_tasks), 2)
-        for task in uri_tasks:
-            self.assertEqual(task["delegate_to"], "localhost")
-            self.assertTrue(task["no_log"])
-        fail_tasks = [t for t in doc if _module_key(t, "fail")[0]]
-        self.assertEqual(len(fail_tasks), 3)
-        patch_task = [t for t in uri_tasks if _module_key(t, "uri")[1]["method"] == "PATCH"][0]
-        body = patch_task["ansible.builtin.uri"]["body"]
-        self.assertEqual(set(body.keys()), {"custom_fields"})
+class RunnerSideTasksStay(unittest.TestCase):
+    def test_tasks_directory_is_the_expected_set(self):
+        # Exactly the files v1 ships: no shared writeback task file, and no
+        # extra file beyond what the dispatch map names.
+        expected = {
+            "_archive_write.yml", "_no_task.yml", "f5.yml", "ios.yml",
+            "junos.yml", "meraki.yml", "nxos.yml", "panos.yml",
+            "velocloud.yml",
+        }
+        self.assertEqual(
+            {p.name for p in TASKS.iterdir() if p.suffix == ".yml"}, expected)
 
     def test_archive_write_is_delegated(self):
         doc = _all_tasks("_archive_write.yml")

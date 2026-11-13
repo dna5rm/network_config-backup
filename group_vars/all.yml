@@ -73,11 +73,6 @@ ansible_password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
 ansible_become_password: "{{ lookup('ansible.builtin.env', 'BACKUP_PASSWORD') }}"
 ansible_command_timeout: 120
 
-# NetBox API, no trailing /api suffix; the token stays in the environment.
-config_backup_netbox_api: >-
-  {{ lookup('ansible.builtin.env', 'NETBOX_API') | default('', true) | trim | regex_replace('/+$', '') }}
-config_backup_netbox_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') | default('', true) }}"
-
 # Archive remote, never with credentials embedded. Empty keeps the files in
 # the working tree and pushes nothing.
 config_backup_git_url: "{{ lookup('ansible.builtin.env', 'BACKUP_GIT_URL') | default('', true) }}"

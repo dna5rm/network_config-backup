@@ -1,3 +1,0 @@
-operational mode: normal
-  model: PA-440
-  platform-family: 3000

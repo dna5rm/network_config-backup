@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PAN-OS redaction and version parsing for network_config-backup.
+"""PAN-OS redaction for network_config-backup.
 
 Filters (spec section 8: each platform file owns its own rule list):
 
@@ -8,8 +8,6 @@ Filters (spec section 8: each platform file owns its own rule list):
     {{ config | panos_redact }}   replace whole secret lines with a comment
     {{ redacted | panos_leaks }}  list the rule ids that still match a redacted
                                   text (the fail-closed backstop)
-    {{ output | panos_version }}  the version token from 'show system info',
-                                  empty string when nothing matches
 
 Input is 'show config running' set-format output: the play asks the device
 for set-format output first ('set cli config-output-format set') and
@@ -60,13 +58,6 @@ LEAK_RULES: List[Tuple[str, re.Pattern]] = [
         "forty-hex key material",
         re.compile(r"(?i)(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])"),
     ),
-]
-
-VERSION_PATTERNS = [
-    re.compile(r"(?im)^\s*sw-version:\s*([0-9][^\s]+)"),
-    # panos_op returns one JSON line, not a CLI "sw-version:" row.
-    re.compile(r"""(?i)["']sw-version["']\s*:\s*["']([0-9][^"']+)"""),
-    re.compile(r"(?i)<sw-version>([0-9][^<]+)"),
 ]
 
 # Every command of set-format PAN-OS output begins with 'set'.
@@ -170,24 +161,12 @@ def panos_leaks(config: Optional[str]) -> List[str]:
     )
 
 
-def panos_version(text: Optional[str]) -> str:
-    """Return the version token from 'show system info', or ''."""
-    if text is None:
-        return ""
-    for pattern in VERSION_PATTERNS:
-        found = pattern.search(str(text))
-        if found:
-            return found.group(1)
-    return ""
-
-
 class FilterModule:
-    """Expose the PAN-OS redaction and version filters."""
+    """Expose the PAN-OS redaction filters."""
 
     def filters(self) -> Dict[str, object]:
         return {
             "panos_config_text": panos_config_text,
             "panos_redact": panos_redact,
             "panos_leaks": panos_leaks,
-            "panos_version": panos_version,
         }

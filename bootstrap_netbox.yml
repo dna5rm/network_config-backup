@@ -1,21 +1,20 @@
 ---
-# Ensure the six NetBox custom fields this playbook uses exist.
+# Ensure the two NetBox platform custom fields this playbook uses exist.
 #
 # Creates a missing field or updates an existing one; never deletes
-# anything. Select fields keep their choices in a NetBox choice set that
+# anything. The select field keeps its choices in a NetBox choice set that
 # this play also ensures (NetBox 4.x has no inline field choices).
-# Fields on dcim.platform (ansible_network_os, ansible_user) and
-# on dcim.device (observed_version, observed_at, validation_state,
-# desired_version) follow the spec exactly.
+# The fields live on dcim.platform (ansible_network_os, ansible_user) and
+# follow the spec exactly. The play never touches a dcim.device field.
 #
-# All six are grouped under the custom-field group_name Backup, and the
-# play sets that group on both create and update.
+# Both are grouped under the custom-field group_name Backup, and the play
+# sets that group on both create and update.
 #
 # Run once from the runner:
 #   NETBOX_API=... NETBOX_TOKEN=... ansible-playbook bootstrap_netbox.yml
 #
 # The nightly backup never runs this play. In check mode the play only
-# reports the six fields it would ensure.
+# reports the two fields it would ensure.
 
 - name: Ensure the NetBox custom fields for config backup
   hosts: localhost
@@ -36,23 +35,6 @@
           - velocloud
       - name: ansible_user
         object_types: [dcim.platform]
-        type: text
-      - name: observed_version
-        object_types: [dcim.device]
-        type: text
-      - name: observed_at
-        object_types: [dcim.device]
-        type: datetime
-      - name: validation_state
-        object_types: [dcim.device]
-        type: select
-        choices:
-          - current
-          - unreachable
-          - unparsed
-          - no_task
-      - name: desired_version
-        object_types: [dcim.device]
         type: text
 
     # NetBox 4.x keeps select-field choices in a choice set; one namespaced

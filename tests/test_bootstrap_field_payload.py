@@ -1,15 +1,15 @@
 """Bootstrap field payload test.
 
 Runs bootstrap_netbox.yml in real (non-check) mode against a mock NetBox
-and asserts that both the create and the update request for the six
-config-backup custom fields carry group_name="Backup".
+and asserts that both the create and the update request for the two
+config-backup platform custom fields carry group_name="Backup".
 
 Two runs:
-  - every field already exists: the play must PATCH all six fields and
-    each patch body must set group_name="Backup";
+  - every field already exists: the play must PATCH both fields and each
+    patch body must set group_name="Backup";
   - one select field is missing: the play must POST it with
     group_name="Backup" and its choice set resolved, while still
-    PATCHing the five existing fields with group_name="Backup".
+    PATCHing the one existing field with group_name="Backup".
 
 The mock answers from the field definitions in the play itself, so the
 test cannot drift from the play's own choice sets. Skipped with a clear
@@ -30,17 +30,13 @@ import yaml
 
 from tests import _REPO
 
-SIX_FIELDS = {
+PLATFORM_FIELDS = {
     "ansible_network_os",
     "ansible_user",
-    "observed_version",
-    "observed_at",
-    "validation_state",
-    "desired_version",
 }
 # The create path is exercised with a select field, the harder kind: its
 # create body must also carry the resolved choice set.
-ABSENT_FIELD = "validation_state"
+ABSENT_FIELD = "ansible_network_os"
 
 ANSIBLE_PLAYBOOK = shutil.which("ansible-playbook")
 
@@ -180,7 +176,7 @@ class SpecBootstrapFieldPayloads(unittest.TestCase):
         # No field is missing, so nothing is created.
         self.assertEqual(self._field_posts(state), [])
         patches = self._field_patches(state)
-        self.assertEqual(set(patches), SIX_FIELDS)
+        self.assertEqual(set(patches), PLATFORM_FIELDS)
         for name, body in patches.items():
             self.assertEqual(body["group_name"], "Backup", name)
 
@@ -196,7 +192,7 @@ class SpecBootstrapFieldPayloads(unittest.TestCase):
         # The select field keeps its choice set on create.
         self.assertEqual(posts[0]["choice_set"], CHOICE_SET_ID)
         patches = self._field_patches(state)
-        self.assertEqual(set(patches), SIX_FIELDS - {ABSENT_FIELD})
+        self.assertEqual(set(patches), PLATFORM_FIELDS - {ABSENT_FIELD})
         for name, body in patches.items():
             self.assertEqual(body["group_name"], "Backup", name)
 

@@ -1,6 +1,6 @@
 # network_config-backup SPEC
 
-Status: DRAFT v5. Review only. Do not implement, commit, or push until the owner says go.
+Status: DRAFT v6. Review only. Do not implement, commit, or push until the owner says go.
 
 Product owner: the repo owner. Implementer: an agent that has this file and no other conversation.
 
@@ -12,14 +12,13 @@ This file is the contract. The planning notes are not. If they disagree, this fi
 2. Device membership is not a list in git. A device is in a run only when NetBox says it is active, it has a primary IPv4, and its platform custom field `ansible_network_os` is set.
 3. `staged` devices are not contacted. Any status other than `active` is not contacted.
 4. The playbook does not write built-in NetBox fields: name, status, role, platform, primary IP, serial.
-5. The playbook writes only `observed_version`, `observed_at`, and `validation_state`. It never writes `desired_version`, `ansible_network_os`, or `ansible_user`.
-6. A failed parse does not change `observed_version`. A failed contact does not change `observed_at`.
-7. A secret that survives redaction fails the host. The raw config is not written.
-8. Git URLs do not carry credentials. The archive remote is `BACKUP_GIT_URL`. Unset means the files stay in the local working tree and nothing is pushed.
-9. One archive repo per runner. Site and platform limits change which hosts run. They do not change the remote.
-10. Config files live at `<site-slug>/<device-name>.cfg` at the archive repo root. There is no `archive/` directory.
-11. The nightly job does not call `bootstrap_netbox.yml`.
-12. `bootstrap_netbox.yml` creates and updates the six custom fields. It does not delete fields.
+5. The playbook writes nothing to NetBox. It reads the inventory and the platform metadata; it never PATCHes, POSTs, or deletes a NetBox object.
+6. A failed contact or a redaction leak fails the host. No archive file is written for it and nothing is recorded in NetBox.
+7. Git URLs do not carry credentials. The archive remote is `BACKUP_GIT_URL`. Unset means the files stay in the local working tree and nothing is pushed.
+8. One archive repo per runner. Site and platform limits change which hosts run. They do not change the remote.
+9. Config files live at `<site-slug>/<device-name>.cfg` at the archive repo root. There is no `archive/` directory.
+10. The nightly job does not call `bootstrap_netbox.yml`.
+11. `bootstrap_netbox.yml` creates and updates the two platform custom fields. It does not delete fields.
 
 A build that breaks one of these is not done.
 
@@ -69,10 +68,8 @@ group_names_raw: true
 | --- | --- | --- | --- | --- |
 | `ansible_network_os` | `dcim.platform` | select | person | see below |
 | `ansible_user` | `dcim.platform` | text | person | |
-| `observed_version` | `dcim.device` | text | play | |
-| `observed_at` | `dcim.device` | datetime | play | |
-| `validation_state` | `dcim.device` | select | play | `current`, `unreachable`, `unparsed`, `no_task` |
-| `desired_version` | `dcim.device` | text | person | |
+
+There are no device-level fields. The play reads the two platform fields and writes nothing back to NetBox.
 
 `ansible_network_os` names follow this rule. If Ansible publishes an `ansible_network_os` string, the choice is that string unchanged. If it does not, the choice is the common name. Do not invent an FQCN for a product that has none.
 
@@ -88,7 +85,7 @@ group_names_raw: true
 
 `paloaltonetworks.panos.panos` is confirmed. The collection `paloaltonetworks.panos` ships `plugins/httpapi/panos.py` and does not ship a terminal plugin. That string is the network OS name. It is not a `network_cli` OS.
 
-`f5.bigip`, `cisco.meraki`, and `velocloud` are dispatch keys owned by this repo. They are not Ansible `ansible_network_os` values. v1 task files for those three keys must set `validation_state` to `no_task` and must not open a connection. Do not invent Dashboard, iControl, or VeloCloud API URLs.
+`f5.bigip`, `cisco.meraki`, and `velocloud` are dispatch keys owned by this repo. They are not Ansible `ansible_network_os` values. v1 task files for those three keys report a skip message and must not open a connection. Do not invent Dashboard, iControl, or VeloCloud API URLs.
 
 `velocloud` is a placeholder. The later task, when someone writes it, uses `ansible_connection: local` and the `uri` module. It does not use `network_cli`. v1 does not write that task.
 
@@ -120,13 +117,13 @@ Defaults when no group_vars file exists:
 
 A site that uses NX-API sets `ansible_connection: httpapi` in that platform's `group_vars` file in that site's copy. Do not infer HTTPS from the OS string. A device that must use a different connector than the rest of its platform is out of scope. Do not add a per-device connection field.
 
-Allowed `ansible_connection` values: `network_cli`, `httpapi`, `netconf`, `local`. Any other value fails that host with `no_task`.
+Allowed `ansible_connection` values: `network_cli`, `httpapi`, `netconf`, `local`. Any other value fails that host.
 
 ## 6. Secrets
 
 | Name | Where it lives | Never |
 | --- | --- | --- |
-| `NETBOX_TOKEN` | runner environment | repo, log, NetBox custom field |
+| `NETBOX_TOKEN` | runner environment | repo, log |
 | `BACKUP_USER` | runner environment | repo |
 | `BACKUP_PASSWORD` | runner environment | repo, log, command line echo |
 | `BACKUP_GIT_URL` | runner environment | embedded user or token |
@@ -140,25 +137,23 @@ Tasks that print module args set `no_log: true` on the task that carries the pas
 
 Dispatch on `ansible_network_os`. One task file per choice. Do not put more than one OS in a file.
 
-| Choice | Collect | Version command | v1 |
-| --- | --- | --- | --- |
-| `cisco.ios.ios` | `show running-config` | `show version` | implement |
-| `cisco.nxos.nxos` | `show running-config` | `show version` | implement |
-| `junipernetworks.junos.junos` | `show configuration \| display set` | `show version` | implement |
-| `paloaltonetworks.panos.panos` | `paloaltonetworks.panos.panos_op` cmd `show config running` | `paloaltonetworks.panos.panos_op` cmd `show system info` | implement |
-| `f5.bigip` | none | none | `no_task`, no connection |
-| `cisco.meraki` | none | none | `no_task`, no connection |
-| `velocloud` | none | none | `no_task`, no connection |
+| Choice | Collect | v1 |
+| --- | --- | --- |
+| `cisco.ios.ios` | `show running-config` | implement |
+| `cisco.nxos.nxos` | `show running-config` | implement |
+| `junipernetworks.junos.junos` | `show configuration \| display set` | implement |
+| `paloaltonetworks.panos.panos` | `paloaltonetworks.panos.panos_op` cmd `show config running` | implement |
+| `f5.bigip` | none | skip message, no connection |
+| `cisco.meraki` | none | skip message, no connection |
+| `velocloud` | none | skip message, no connection |
 
 IOS and NX-OS use the matching `*_command` module. Junos uses `junipernetworks.junos.junos_command`. Turn the pager off before the show. Do not save the config on the device. Do not enter configuration mode.
 
-PAN-OS uses `paloaltonetworks.panos.panos_op` on the runner. `ansible_connection` is `local`. Pass `provider` with `ip_address` from `ansible_host`, `username` from the platform user, and `password` from `BACKUP_PASSWORD`. Do not pass `api_key`. Do not use `network_cli`. The config text written to git is `stdout`, not `stdout_xml`, unless `stdout` is empty. Store the version token from `show system info`. Do not store the whole response in NetBox.
+PAN-OS uses `paloaltonetworks.panos.panos_op` on the runner. `ansible_connection` is `local`. Pass `provider` with `ip_address` from `ansible_host`, `username` from the platform user, and `password` from `BACKUP_PASSWORD`. Do not pass `api_key`. Do not use `network_cli`. The config text written to git is `stdout`, not `stdout_xml`, unless `stdout` is empty.
 
-Version parse: store the version token only. If the parser does not match, set `validation_state` to `unparsed` and do not change `observed_version`. Do not store the full `show version` output in NetBox.
+On connect or command failure: the host fails. Do not write a config file. Nothing is written to NetBox.
 
-On connect or command failure: set `validation_state` to `unreachable`. Do not change `observed_version` or `observed_at`. Do not write a config file.
-
-On success: write the redacted config, set `observed_version`, set `observed_at` to UTC now, set `validation_state` to `current`.
+On success: write the redacted config.
 
 `gather_facts: false`. Do not use a second play for git. Git steps are `run_once`, `delegate_to: localhost`, `connection: local`, inside the device play, so a limit does not skip them.
 
@@ -190,15 +185,9 @@ Do not force-push. If the remote has no common history, stop and say so. Do not 
 
 Token handling: the URL has no userinfo. If `BACKUP_GIT_TOKEN` is set, the sync script answers git and removes the helper when the push returns. Do not leave the helper on disk.
 
-## 10. NetBox writeback
+## 10. NetBox is read-only
 
-PATCH the device custom fields after a successful collect, and PATCH `validation_state` after a failed collect. Do not PATCH any other field.
-
-Do not write a journal entry in v1.
-
-`observed_at` is ISO-8601 UTC.
-
-If the PATCH fails, the config file may already be written. The task still fails. Do not commit that host's file in a commit that claims success. Leave the file unstaged and exit non-zero.
+NetBox is read-only for this playbook. The inventory plugin reads devices; the lookup plugin reads platform metadata. No task PATCHes or POSTs anything. A failed contact and a redaction leak record nothing in NetBox.
 
 ## 11. Wrapper
 
@@ -217,23 +206,22 @@ The suite runs without a device and without a token.
 1. Inventory render with no site and no platform filter does not contain a site key.
 2. Inventory render with `NETBOX_SITE=site-a` contains that filter and no other site.
 3. A fixture config that still matches a secret rule after redaction fails and writes no file.
-4. A fixture `show version` that does not match the parser sets `unparsed` and does not change a seeded `observed_version`.
-5. `f5.bigip`, `cisco.meraki`, and `velocloud` do not call a connection plugin.
-6. Git commit is skipped when the redacted file is unchanged.
-7. A URL with userinfo is refused.
-8. `bootstrap_netbox.yml` in check mode reports the six fields and does not report a seventh.
-9. The repo, excluding nothing, contains none of: a home domain, a private address, a personal login, or a device name from the owner's lab. Test fixtures use `site-a`, `device-a`, and `192.0.2.10`.
+4. `f5.bigip`, `cisco.meraki`, and `velocloud` do not call a connection plugin and write nothing to NetBox.
+5. Git commit is skipped when the redacted file is unchanged.
+6. A URL with userinfo is refused.
+7. `bootstrap_netbox.yml` in check mode reports the two platform fields and does not report a third.
+8. The repo, excluding nothing, contains none of: a home domain, a private address, a personal login, or a device name from the owner's lab. Test fixtures use `site-a`, `device-a`, and `192.0.2.10`.
 
 ## 13. Done
 
-Done when sections 12.1 through 12.9 pass, `./backup` against a NetBox that has one active test device with `ansible_network_os` set writes one redacted file at `<site>/<device>.cfg`, a second run makes no commit, and a `staged` device on the same platform is absent from the inventory.
+Done when sections 12.1 through 12.8 pass, `./backup` against a NetBox that has one active test device with `ansible_network_os` set writes one redacted file at `<site>/<device>.cfg`, a second run makes no commit, and a `staged` device on the same platform is absent from the inventory.
 
 Semaphore templates, schedules, and the NAS remote are not part of this repo's done gate. They are runner setup. Do not create them from this spec.
 
 ## 14. Out of scope
 
 - Deleting NetBox fields.
-- Writing `desired_version`.
+- Writing any NetBox field.
 - Comparing or overwriting the built-in serial.
 - Storing a config hash in NetBox.
 - F5, Meraki, and VeloCloud collection.
@@ -244,6 +232,7 @@ Semaphore templates, schedules, and the NAS remote are not part of this repo's d
 ## 15. Decided
 
 1. `f5.bigip`, `cisco.meraki`, and `velocloud` are placeholders. v1 does not connect to them. The strings stay as written.
+2. The playbook writes nothing to NetBox. Earlier drafts carried device-level lifecycle fields and a shared writeback task file; both are removed.
 
 ## 16. Owner still decides
 

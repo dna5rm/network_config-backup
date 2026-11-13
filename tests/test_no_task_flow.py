@@ -5,11 +5,9 @@ and a mock NetBox HTTP server on the loopback interface (name only). The
 mock device belongs to the f5.bigip placeholder platform, whose task file
 must never open a connection to a device.
 
-Asserts (spec 1.5, 4, 10, 12.5):
+Asserts (spec 1.5, 12.4):
   - the play completes without contacting any device,
-  - NetBox is patched exactly once for the device, with custom_fields equal
-    to the seeded read plus validation_state=no_task and nothing else,
-  - observed_version and desired_version seeds are preserved,
+  - NetBox receives no device call at all: no device read, no PATCH,
   - no archive file or commit is produced for a placeholder platform,
   - the lookup plugin read /api/dcim/platforms/ exactly once in the run.
 """
@@ -56,12 +54,6 @@ class _MockNetBoxHandler(BaseHTTPRequestHandler):
                 "custom_fields": {"ansible_network_os": "f5.bigip",
                                   "ansible_user": ""},
             }]})
-        elif path == "/api/dcim/devices/1/":
-            state["device_get_calls"].append(self.path)
-            self._json({"id": 1, "custom_fields": {
-                "observed_version": "1.2.3-seed",
-                "desired_version": "9.9-seed",
-            }})
         else:
             state["unexpected"].append(("GET", self.path))
             self._json({"detail": "not found"}, status=404)
@@ -84,8 +76,7 @@ class SpecNoTaskFlowEndToEnd(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         _MockNetBoxHandler.state = {
-            "platform_calls": [], "device_get_calls": [],
-            "patch_calls": [], "unexpected": [],
+            "platform_calls": [], "patch_calls": [], "unexpected": [],
         }
         self.server = ThreadingHTTPServer(("localhost", 0), _MockNetBoxHandler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -114,7 +105,7 @@ class SpecNoTaskFlowEndToEnd(unittest.TestCase):
         })
         return env
 
-    def test_placeholder_platform_is_recorded_without_a_connection(self):
+    def test_placeholder_platform_ends_without_a_connection(self):
         with tempfile.TemporaryDirectory() as scratch:
             proc = subprocess.run(
                 ["ansible-playbook", "-i", "tests/integration_inventory.yml",
@@ -129,23 +120,13 @@ class SpecNoTaskFlowEndToEnd(unittest.TestCase):
         # The platform metadata was read once for the whole play.
         self.assertEqual(len(state["platform_calls"]), 1)
 
-        # The device record was read, then patched exactly once.
-        self.assertEqual(len(state["device_get_calls"]), 1)
-        self.assertEqual(len(state["patch_calls"]), 1)
-        path, body = state["patch_calls"][0]
-        self.assertEqual(path, "/api/dcim/devices/1/")
-        self.assertEqual(set(body.keys()), {"custom_fields"})
-        self.assertEqual(body["custom_fields"], {
-            "observed_version": "1.2.3-seed",
-            "desired_version": "9.9-seed",
-            "validation_state": "no_task",
-        })
+        # Nothing is written back to NetBox: no PATCH at all.
+        self.assertEqual(state["patch_calls"], [])
 
         # No archive file was written for a placeholder platform: only the
         # empty working tree the play creates for the git step exists.
         children = [p.name for p in self.workdir.iterdir()]
         self.assertEqual(children, [])
-        self.assertFalse(self.server and state["patch_calls"] is None)
 
     def test_run_reports_the_skip_without_failure(self):
         with tempfile.TemporaryDirectory() as scratch:

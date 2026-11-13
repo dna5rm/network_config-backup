@@ -114,7 +114,7 @@ class RenderedInventoryShape(unittest.TestCase):
         self.assertIn("ansible_host", compose)
         self.assertIn("nb_site_slug", compose)
         self.assertIn("nb_platform_slug", compose)
-        self.assertIn("nb_device_id", compose)
+        self.assertNotIn("nb_device_id", compose)
 
 
 class ComposePlatformSlugAcceptsBothShapes(unittest.TestCase):
